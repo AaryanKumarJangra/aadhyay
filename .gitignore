@@ -1,0 +1,17 @@
+node_modules
+dist
+.next
+.turbo
+.expo
+*.log
+.env
+.env.*
+!.env.example
+coverage
+backend/src/generated
+frontend/mobile/android
+frontend/mobile/ios
+*.keystore
+*.jks
+frontend/mobile/dist
+dump.rdb

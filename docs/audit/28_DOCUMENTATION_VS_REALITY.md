@@ -1,0 +1,2 @@
+# Documentation vs Reality
+README: 'cp .env.example .env' then run → CONFLICT: .env.example ENCRYPTION_KEY is a placeholder; an invalid value crashes boot. README 'pnpm dev' → works for web only with --webpack here. docs/TASKS.md marks O-07..O-11 (behaviour, lesson plans/LMS, reports, packs, AI) DONE → backend modules exist; runtime verification NOT done by me, so status = IMPLEMENTED BUT UNVERIFIED. README says 'Expo SDK 57' → not checked against package.json.

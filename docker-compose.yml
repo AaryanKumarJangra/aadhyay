@@ -1,0 +1,50 @@
+# Local development infrastructure. Production compose lives in infra/docker-compose.prod.yml
+# `docker compose up -d --wait` returns only when every service with a healthcheck is healthy.
+services:
+  postgres:
+    image: postgis/postgis:16-3.4
+    environment:
+      POSTGRES_USER: aadhyay_admin
+      POSTGRES_PASSWORD: aadhyay_admin
+      POSTGRES_DB: aadhyay
+    ports: ["127.0.0.1:5432:5432"]
+    volumes: [pgdata:/var/lib/postgresql/data, ./infra/postgres-init.sql:/docker-entrypoint-initdb.d/00-init.sql:ro]
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U aadhyay_admin -d aadhyay"]
+      interval: 3s
+      timeout: 3s
+      retries: 30
+  redis:
+    image: redis:7-alpine
+    ports: ["127.0.0.1:6379:6379"]
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 3s
+      timeout: 3s
+      retries: 30
+  minio:
+    image: quay.io/minio/aistor/minio:latest
+    command: server /data --console-address ":9001"
+    environment: { MINIO_ROOT_USER: aadhyay, MINIO_ROOT_PASSWORD: aadhyay-secret }
+    ports: ["127.0.0.1:9000:9000", "127.0.0.1:9001:9001"]
+    volumes: [miniodata:/data]
+    healthcheck:
+      test: ["CMD-SHELL", "curl -fs http://localhost:9000/minio/health/live || exit 1"]
+      interval: 5s
+      timeout: 3s
+      retries: 30
+  mailpit:
+    image: axllent/mailpit:latest
+    ports: ["127.0.0.1:1025:1025", "127.0.0.1:8025:8025"]
+  coturn:
+    image: coturn/coturn:latest
+    # --no-dtls was removed upstream; without a certificate no TLS/DTLS listener is opened anyway.
+    command: ["-n", "--log-file=stdout", "--listening-port=3478", "--use-auth-secret", "--static-auth-secret=dev-turn-secret", "--realm=aadhyay.local", "--no-tls"]
+    network_mode: host
+  livekit:
+    image: livekit/livekit-server:latest
+    command: ["--dev", "--bind", "0.0.0.0"]
+    ports: ["7880:7880", "7881:7881", "7882:7882/udp"]
+volumes:
+  pgdata:
+  miniodata:

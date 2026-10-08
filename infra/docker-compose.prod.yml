@@ -1,0 +1,62 @@
+# Production stack for Stage 0 (single free VM) and Stage A (E2E Networks Delhi NCR, 2 VMs).
+# Usage: cp .env.prod.example .env.prod && docker compose -f infra/docker-compose.prod.yml --env-file .env.prod up -d
+# Stage A: run `postgres` on the DB VM (profile db) and the rest on the app VM; point DATABASE_URL to the DB VM's private IP.
+x-backend: &backend
+  image: ghcr.io/${GH_OWNER:-aadhyay}/aadhyay-backend:${TAG:-latest}
+  env_file: ../.env.prod
+  restart: unless-stopped
+  depends_on: [redis]
+services:
+  caddy:
+    image: caddy:2
+    restart: unless-stopped
+    ports: ["80:80", "443:443", "443:443/udp"]
+    volumes: [./caddy/Caddyfile:/etc/caddy/Caddyfile:ro, caddy_data:/data, caddy_config:/config]
+    environment: ["BASE_DOMAIN=${BASE_DOMAIN:-aadhyay.com}"]
+  web:
+    image: ghcr.io/${GH_OWNER:-aadhyay}/aadhyay-web:${TAG:-latest}
+    env_file: ../.env.prod
+    restart: unless-stopped
+  api:
+    <<: *backend
+    command: ["sh", "-c", "node dist/scripts/migrate.js && node dist/scripts/seed.js && node dist/main.api.js"]
+    environment: [ROLE=api]
+  realtime:
+    <<: *backend
+    command: ["node", "dist/main.realtime.js"]
+    environment: [ROLE=realtime]
+  worker:
+    <<: *backend
+    command: ["node", "dist/main.worker.js"]
+    environment: [ROLE=worker]
+  postgres:
+    image: postgis/postgis:16-3.4
+    profiles: ["db", "single"]
+    restart: unless-stopped
+    environment: { POSTGRES_USER: aadhyay_admin, POSTGRES_PASSWORD: "${PG_ADMIN_PASSWORD}", POSTGRES_DB: aadhyay }
+    volumes: [pgdata:/var/lib/postgresql/data, ./postgres-init.sql:/docker-entrypoint-initdb.d/00-init.sql:ro]
+    command: ["postgres", "-c", "shared_buffers=1GB", "-c", "max_connections=200", "-c", "wal_level=replica", "-c", "archive_mode=on", "-c", "archive_command=/bin/true"]
+  redis:
+    image: redis:7-alpine
+    restart: unless-stopped
+    command: ["redis-server", "--appendonly", "yes", "--maxmemory", "512mb", "--maxmemory-policy", "noeviction"]
+    volumes: [redisdata:/data]
+  coturn:
+    image: coturn/coturn:latest
+    restart: unless-stopped
+    network_mode: host
+    command: ["-n", "--log-file=stdout", "--listening-port=3478", "--tls-listening-port=5349", "--min-port=49160", "--max-port=49999", "--use-auth-secret", "--static-auth-secret=${TURN_SECRET}", "--realm=${BASE_DOMAIN:-aadhyay.com}", "--no-cli", "--fingerprint"]
+  livekit:
+    image: livekit/livekit-server:latest
+    restart: unless-stopped
+    network_mode: host
+    command: ["--config", "/etc/livekit.yaml"]
+    volumes: [./livekit.yaml:/etc/livekit.yaml:ro]
+  backup:
+    image: postgis/postgis:16-3.4
+    profiles: ["db", "single"]
+    restart: unless-stopped
+    env_file: ../.env.prod
+    volumes: [./scripts/backup.sh:/backup.sh:ro]
+    entrypoint: ["sh", "-c", "apt-get update -qq && apt-get install -y -qq awscli >/dev/null && while true; do sh /backup.sh; sleep 86400; done"]
+volumes: { pgdata: {}, redisdata: {}, caddy_data: {}, caddy_config: {} }

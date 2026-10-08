@@ -1,0 +1,22 @@
+# Automatic HTTPS. Cloudflare sits in front (proxied DNS); custom domains arrive via Cloudflare for SaaS.
+{
+  email ops@{$BASE_DOMAIN}
+  servers { protocols h1 h2 h3 }
+  on_demand_tls { ask http://api:4000/v1/health/tls-ask }
+}
+api.{$BASE_DOMAIN} {
+  encode zstd gzip
+  reverse_proxy api:4000
+}
+rt.{$BASE_DOMAIN} {
+  reverse_proxy realtime:4001
+}
+{$BASE_DOMAIN}, www.{$BASE_DOMAIN}, app.{$BASE_DOMAIN}, control.{$BASE_DOMAIN}, *.{$BASE_DOMAIN} {
+  encode zstd gzip
+  reverse_proxy web:3000 { header_up X-Forwarded-Host {host} }
+}
+# Tenant custom domains (verified in Aadhyay) — on-demand TLS only for hosts the API approves.
+:443 {
+  tls { on_demand }
+  reverse_proxy web:3000 { header_up X-Forwarded-Host {host} }
+}

@@ -1,0 +1,28 @@
+import { pgEnum } from 'drizzle-orm/pg-core';
+
+export const segmentEnum = pgEnum('segment', ['school', 'college', 'institute', 'coaching', 'creator']);
+export const tenantStatusEnum = pgEnum('tenant_status', ['trial', 'active', 'grace', 'suspended', 'archived', 'purged']);
+export const billingCycleEnum = pgEnum('billing_cycle', ['monthly', 'quarterly', 'yearly']);
+export const invoiceKindEnum = pgEnum('invoice_kind', ['proforma', 'tax', 'credit_note']);
+export const invoiceStatusEnum = pgEnum('invoice_status', ['draft', 'issued', 'paid', 'partially_paid', 'cancelled']);
+export const paymentStatusEnum = pgEnum('payment_status', ['created', 'pending', 'succeeded', 'failed', 'refunded']);
+export const walletTxnKindEnum = pgEnum('wallet_txn_kind', ['topup', 'debit', 'refund', 'adjustment', 'credit']);
+export const membershipKindEnum = pgEnum('membership_kind', ['staff', 'student', 'guardian', 'alumni']);
+export const scopeKindEnum = pgEnum('scope_kind', ['tenant', 'branch', 'class', 'section', 'own']);
+export const outboxStatusEnum = pgEnum('outbox_status', ['pending', 'processing', 'done', 'failed']);
+export const genderEnum = pgEnum('gender', ['male', 'female', 'other']);
+export const personStatusEnum = pgEnum('person_status', ['active', 'inactive', 'left', 'alumni']);
+export const attendanceStatusEnum = pgEnum('attendance_status', ['present', 'absent', 'late', 'half_day', 'leave', 'holiday']);
+export const attendanceModeEnum = pgEnum('attendance_mode', ['manual', 'qr', 'rfid', 'face', 'biometric', 'geo', 'live']);
+export const subjectTypeEnum = pgEnum('subject_type', ['student', 'staff']);
+export const approvalStatusEnum = pgEnum('approval_status', ['pending', 'approved', 'rejected', 'cancelled']);
+export const feeStatusEnum = pgEnum('fee_status', ['unpaid', 'partial', 'paid', 'waived', 'cancelled']);
+export const payModeEnum = pgEnum('pay_mode', ['cash', 'upi', 'card', 'netbanking', 'cheque', 'dd', 'bank_transfer', 'wallet', 'online']);
+export const tripDirectionEnum = pgEnum('trip_direction', ['pickup', 'drop']);
+export const tripStatusEnum = pgEnum('trip_status', ['scheduled', 'running', 'ended', 'cancelled']);
+export const channelEnum = pgEnum('channel', ['push', 'inbox', 'messenger', 'whatsapp', 'sms', 'email']);
+export const deliveryStatusEnum = pgEnum('delivery_status', ['queued', 'sent', 'delivered', 'read', 'failed', 'skipped']);
+export const conversationKindEnum = pgEnum('conversation_kind', ['direct', 'group', 'broadcast', 'institution']);
+export const waCategoryEnum = pgEnum('wa_category', ['marketing', 'utility', 'authentication', 'service']);
+export const directionEnum = pgEnum('direction', ['inbound', 'outbound']);
+export const contentStatusEnum = pgEnum('content_status', ['draft', 'scheduled', 'published', 'archived']);

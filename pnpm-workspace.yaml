@@ -1,0 +1,12 @@
+packages:
+  - backend
+  - backend/contracts
+  - frontend/web
+  - frontend/mobile
+  - frontend/packages/*
+onlyBuiltDependencies:
+  - argon2
+  - esbuild
+  - "@nestjs/core"
+  - "@swc/core"
+  - msgpackr-extract

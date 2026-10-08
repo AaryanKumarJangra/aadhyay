@@ -1,0 +1,1 @@
+export const CITIES = ['meerut', 'ghaziabad', 'noida', 'greater-noida', 'delhi', 'gurugram', 'faridabad', 'muzaffarnagar', 'saharanpur', 'hapur', 'bulandshahr', 'baghpat', 'moradabad', 'aligarh', 'bijnor'];

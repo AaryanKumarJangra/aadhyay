@@ -1,0 +1,4 @@
+# Feature Reality Matrix
+VERIFIED WORKING (via repo e2e + my probes): tenant signup; OTP auth; fees collect/ledger/receipt; attendance+absent alert; exams→report card visibility; notices; payroll LOP; library fine; certificates verify; online test grade/rank; CMS site+lead→student; transport link/public tracking; messenger E2EE round trip; billing quote→GST invoice→plan modules; lifecycle trial→grace→suspended; RLS isolation.
+IMPLEMENTED BUT UNVERIFIED: lesson plans, LMS, live classes, hostel, inventory, canteen, behaviour, health, alumni, CRM pipeline beyond lead, accounts/ledger reports, HR beyond payroll, front office, compliance, AI, coaching/college/multibranch/store packs, reports builder, WhatsApp, push, SMS, Razorpay, LiveKit calls, web console pages, mobile screens.
+NOT IMPLEMENTED / not found: biometric, RFID/face attendance were not located in module names (not searched exhaustively).

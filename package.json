@@ -1,0 +1,40 @@
+{
+  "name": "aadhyay",
+  "private": true,
+  "packageManager": "pnpm@10.28.0",
+  "engines": {
+    "node": ">=22"
+  },
+  "scripts": {
+    "setup": "node scripts/setup.mjs",
+    "doctor": "node scripts/doctor.mjs",
+    "health": "node scripts/health.mjs",
+    "dev": "node scripts/dev.mjs",
+    "dev:web": "node scripts/dev.mjs --only=web",
+    "dev:api": "node scripts/dev.mjs --only=api",
+    "dev:worker": "node scripts/dev.mjs --only=worker",
+    "dev:realtime": "node scripts/dev.mjs --only=realtime",
+    "dev:backend": "node scripts/dev.mjs --only=backend",
+    "dev:mobile": "cd frontend/mobile && FLAVOUR=${FLAVOUR:-aadhyay} npx expo start",
+    "build": "turbo run build",
+    "typecheck": "turbo run typecheck",
+    "lint": "turbo run lint",
+    "test": "turbo run test",
+    "test:e2e": "pnpm --filter @aadhyay/backend build && pnpm --filter @aadhyay/backend test:e2e",
+    "test:e2ee": "pnpm --filter @aadhyay/e2ee test && pnpm --filter @aadhyay/backend test:e2ee",
+    "test:security": "pnpm --filter @aadhyay/backend test:security",
+    "test:integration": "pnpm --filter @aadhyay/backend test:e2e",
+    "db:generate": "pnpm --filter @aadhyay/backend db:generate",
+    "db:migrate": "pnpm --filter @aadhyay/backend build && pnpm --filter @aadhyay/backend db:migrate",
+    "db:seed": "pnpm --filter @aadhyay/backend db:seed",
+    "db:seed:demo": "pnpm --filter @aadhyay/backend db:seed:demo",
+    "db:reset": "node scripts/db-reset.mjs",
+    "infra:up": "docker compose up -d --wait",
+    "infra:down": "docker compose down"
+  },
+  "devDependencies": {
+    "turbo": "^2.11.7",
+    "typescript": "5.9.3",
+    "prettier": "^3.6.0"
+  }
+}

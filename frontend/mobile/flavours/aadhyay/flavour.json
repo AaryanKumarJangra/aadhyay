@@ -1,0 +1,12 @@
+{
+  "slug": "aadhyay",
+  "name": "Aadhyay",
+  "tenantSlug": null,
+  "android": { "package": "com.aadhyay.app", "sha256": [] },
+  "ios": { "bundleIdentifier": "com.aadhyay.app" },
+  "colors": { "primary": "#1E40AF", "accent": "#F59E0B" },
+  "apiBaseUrl": "https://api.aadhyay.com",
+  "realtimeUrl": "https://rt.aadhyay.com",
+  "websiteHost": "aadhyay.com",
+  "deepLinkHosts": ["aadhyay.com"]
+}

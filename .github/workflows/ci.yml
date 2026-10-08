@@ -1,0 +1,49 @@
+name: CI
+on: { push: { branches: [main] }, pull_request: {} }
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgis/postgis:16-3.4
+        env: { POSTGRES_USER: aadhyay_admin, POSTGRES_PASSWORD: aadhyay_admin, POSTGRES_DB: aadhyay }
+        ports: ["5432:5432"]
+        options: --health-cmd "pg_isready -U aadhyay_admin" --health-interval 5s --health-retries 20
+      redis:
+        image: redis:7
+        ports: ["6379:6379"]
+    env:
+      DATABASE_URL: postgresql://aadhyay_admin:aadhyay_admin@localhost:5432/aadhyay
+      APP_DATABASE_URL: postgresql://aadhyay_app:aadhyay_app@localhost:5432/aadhyay
+      REDIS_URL: redis://localhost:6379
+      JWT_SECRET: ci-secret-ci-secret-ci-secret-ci-secret-ci-secret-1234
+      ENCRYPTION_KEY: base64:MDEyMzQ1Njc4OTAxMjM0NTY3ODkwMTIzNDU2Nzg5MDE=
+      PHONE_HASH_PEPPER: ci-pepper
+      OTP_DEV_ECHO: "true"
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: 22, cache: pnpm }
+      - run: pnpm install --frozen-lockfile
+      - run: PGPASSWORD=aadhyay_admin psql -h localhost -U aadhyay_admin -d aadhyay -f infra/postgres-init.sql
+      - run: pnpm --filter @aadhyay/contracts build && pnpm --filter @aadhyay/e2ee build
+      - run: cd backend && npx tsc -p tsconfig.build.json && node dist/scripts/migrate.js
+      - run: cd backend && npx vitest run && npx vitest run --config vitest.e2e.config.mts
+      - run: cd frontend/packages/e2ee && npx vitest run
+      - run: cd frontend/web && npx tsc --noEmit && NEXT_TELEMETRY_DISABLED=1 npx next build
+      - run: cd frontend/mobile && npx tsc --noEmit
+  images:
+    if: github.ref == 'refs/heads/main'
+    needs: test
+    runs-on: ubuntu-latest
+    permissions: { packages: write, contents: read }
+    steps:
+      - uses: actions/checkout@v4
+      - uses: docker/login-action@v3
+        with: { registry: ghcr.io, username: "${{ github.actor }}", password: "${{ secrets.GITHUB_TOKEN }}" }
+      - run: |
+          docker build -f backend/Dockerfile -t ghcr.io/${{ github.repository_owner }}/aadhyay-backend:${{ github.sha }} -t ghcr.io/${{ github.repository_owner }}/aadhyay-backend:latest .
+          docker build -f frontend/web/Dockerfile -t ghcr.io/${{ github.repository_owner }}/aadhyay-web:${{ github.sha }} -t ghcr.io/${{ github.repository_owner }}/aadhyay-web:latest .
+          docker push --all-tags ghcr.io/${{ github.repository_owner }}/aadhyay-backend
+          docker push --all-tags ghcr.io/${{ github.repository_owner }}/aadhyay-web
