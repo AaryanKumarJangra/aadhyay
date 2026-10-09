@@ -65,7 +65,10 @@ describe('daily school loop', () => {
     // parent sees ledger, can't collect
     const parent = await api.login(s.parentPhone);
     expect((await api.req('GET', `/fees/students/${s.k1.id}/ledger`, { token: parent.token })).status).toBe(200);
-    expect((await api.req('GET', `/fees/students/${s.k2.id}/ledger`, { token: parent.token })).status).toBe(404);
+    // Another family's child: a uniform, explained 403 (same answer for unknown ids, so it reveals nothing).
+    const other = await api.req('GET', `/fees/students/${s.k2.id}/ledger`, { token: parent.token });
+    expect(other.status).toBe(403);
+    expect(other.body.error.details).toMatchObject({ denial: 'OUT_OF_SCOPE', contact: expect.any(String) });
     expect((await api.req('POST', '/fees/collect', { token: parent.token, body: { studentId: s.k1.id, mode: 'cash', amountPaise: 100 } })).status).toBe(403);
     // online pay (log gateway in dev)
     const init = await api.req('POST', '/fees/online/init', { token: parent.token, body: { studentId: s.k1.id, studentFeeIds: led.body.lines.map((l: any) => l.id) } });

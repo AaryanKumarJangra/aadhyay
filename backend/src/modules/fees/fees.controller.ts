@@ -40,7 +40,7 @@ export class FeesController {
   }
   @Get('students/:id/ledger')
   async ledger(@Param('id') id: string) {
-    await this.people.assertCanSeeStudent(id);
+    await this.people.assertCanSeeStudent(id, 'fees.payment.view');
     return this.svc.ledger(id);
   }
   @Can('fees.discount.create', 'fees.discount.approve') @Post('discounts/apply')
@@ -54,13 +54,13 @@ export class FeesController {
   @Get('receipts/:id')
   async receipt(@Param('id') id: string) {
     const r = await this.svc.receiptDetail(id);
-    await this.people.assertCanSeeStudent(r.studentId);
+    await this.people.assertCanSeeStudent(r.studentId, 'fees.payment.view');
     return r;
   }
   @Get('receipts/:id/pdf')
   async receiptPdf(@Param('id') id: string, @Query('format') format: 'a4' | 'thermal' = 'a4', @Res() res: FastifyReply) {
     const r = await this.svc.receiptDetail(id);
-    await this.people.assertCanSeeStudent(r.studentId);
+    await this.people.assertCanSeeStudent(r.studentId, 'fees.payment.view');
     const [t] = await this.db.admin.select().from(tenant).where(eq(tenant.id, Ctx.tenantId()));
     const b = (t!.branding ?? {}) as any;
     const pdf = await receiptPdf({ institution: { name: t!.name, address: b.address, phone: b.phone, affiliation: b.affiliation }, number: r.number, date: r.collectedAt, mode: r.mode, reference: r.reference, student: { name: r.student!.name, admissionNo: r.student!.admissionNo }, lines: r.lines, totalPaise: r.totalPaise, cancelled: !!r.cancelledAt }, format);
@@ -88,7 +88,7 @@ export class FeesController {
   /** Parent app "Pay now". */
   @Post('online/init')
   async onlineInit(@Body(Z(Fees.onlinePayInit)) b: any) {
-    await this.people.assertCanSeeStudent(b.studentId);
+    await this.people.assertCanSeeStudent(b.studentId, 'fees.payment.create');
     return this.svc.onlineInit(b.studentId, b.studentFeeIds);
   }
   @Post('online/confirm')

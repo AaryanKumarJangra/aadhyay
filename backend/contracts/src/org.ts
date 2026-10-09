@@ -52,3 +52,30 @@ export const inviteMember = z.object({
   scopeKind: z.enum(['tenant', 'branch', 'class', 'section', 'own']).default('tenant'),
   scopeId: z.string().uuid().optional(),
 });
+
+/** Control-plane onboarding wizard (brief §7): everything needed to provision a ready-to-use institution. */
+export const onboardingInput = z.object({
+  segment: z.enum(['school', 'college', 'institute', 'coaching', 'creator']),
+  institutionName: z.string().trim().min(3, 'Enter the institution’s name (at least 3 letters)').max(150),
+  shortName: z.string().max(40).optional(),
+  legalName: z.string().max(200).optional(),
+  code: z.string().max(20).optional(),
+  phone: phoneIN.optional(),
+  email: z.string().email('Enter a valid email').optional(),
+  address: z.string().max(300).optional(),
+  city: z.string().trim().min(2, 'Enter the city').max(80),
+  state: z.string().min(2, 'Choose the state').max(80),
+  stateCode: z.string().regex(/^\d{2}$/, 'Two-digit GST state code, e.g. 09'),
+  timezone: z.string().default('Asia/Kolkata'),
+  slug: z.string().regex(/^[a-z0-9](?:[a-z0-9-]{1,38}[a-z0-9])$/, 'lowercase letters, digits and hyphens').optional(),
+  customDomain: z.string().regex(/^(?!-)[a-z0-9-]+(\.[a-z0-9-]+)+$/i, 'Enter a domain like school.com').optional(),
+  branches: z.array(z.object({ name: z.string().trim().min(2, 'Enter the branch name'), code: z.string().trim().min(1, 'Enter a short code').max(20), address: z.string().optional(), city: z.string().optional(), phone: z.string().optional(), headName: z.string().optional() })).max(50).default([]),
+  planCode: z.string().min(2, 'Choose a plan'),
+  cycle: z.enum(['yearly', 'quarterly']).default('yearly'),
+  approxStudents: z.number({ message: 'Enter a number' }).int().min(1, 'At least 1 student').max(200000).optional(),
+  modules: z.array(z.string()).min(1, 'Choose at least one module'),
+  branding: z.object({ primaryColor: z.string().regex(/^#[0-9a-fA-F]{6}$/, 'Pick a colour'), accentColor: z.string().regex(/^#[0-9a-fA-F]{6}$/, 'Pick a colour'), tagline: z.string().max(200).optional() }),
+  website: z.object({ enabled: z.boolean().default(true), template: z.string().default('modern-school') }),
+  owner: z.object({ name: z.string().trim().min(2, 'Enter the owner’s name'), phone: phoneIN, email: z.string().email('Enter a valid email').optional() }),
+  principal: z.object({ name: z.string().trim().min(2, 'Enter the principal’s name'), phone: phoneIN, email: z.string().email('Enter a valid email').optional() }).optional(),
+});

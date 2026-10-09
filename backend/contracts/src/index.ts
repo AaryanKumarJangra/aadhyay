@@ -17,3 +17,7 @@ export * as Cms from './cms';
 export * as Crm from './crm';
 export * as Billing from './billing';
 export { DEFAULT_ROUTING, URGENT_EVENTS, type RoutingChannels } from './comms';
+export * from './authz/catalogue';
+export * from './authz/engine';
+export * from './authz/templates';
+export * from './cms-blocks';

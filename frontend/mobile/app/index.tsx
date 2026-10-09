@@ -1,33 +1,34 @@
-import { useEffect } from 'react';
+import { useEffect, useState } from 'react';
 import { router } from 'expo-router';
 import { View, ActivityIndicator } from 'react-native';
 import { session } from '@/lib/session';
 import { LOCKED_TENANT } from '@/lib/config';
 import { api } from '@/lib/api';
-import { hasPermission } from '@aadhyay/contracts';
 import { registerPush } from '@/lib/push';
+import { ErrorState } from '@/components/ui';
 
-/** Decides the home screen by role: driver → trip, teacher → classes, parent/student → children, messenger-only → chats. */
+/** Entry: not signed in → pick institution / log in; signed in → load profile & branding → tabs. */
 export default function Entry() {
-  useEffect(() => {
-    (async () => {
-      const s = session.get();
-      if (!s.accessToken) return router.replace(!LOCKED_TENANT && !s.tenantSlug ? '/institution' : '/login');
-      void registerPush();
-      try {
-        const me = await api('/me');
-        session.set({ me, userId: me.userId });
-        if (!me.tenantId) return router.replace('/chat');
-        const branding = await api(`/public/tenants/${s.tenantSlug ?? me.memberships.find((m: any) => m.tenantId === me.tenantId)?.tenantSlug}/branding`, { auth: false }).catch(() => null);
-        session.set({ branding: branding?.branding });
-        const p = me.permissions as string[];
-        if (hasPermission(p, 'transport.trip.create') && !hasPermission(p, 'people.student.view')) return router.replace('/driver');
-        if (hasPermission(p, 'attendance.student.create')) return router.replace('/teacher');
-        return router.replace('/parent');
-      } catch {
-        router.replace('/login');
+  const [err, setErr] = useState('');
+  const go = async () => {
+    setErr('');
+    const s = session.get();
+    if (!s.accessToken) return router.replace(!LOCKED_TENANT && !s.tenantSlug ? '/institution' : '/login');
+    void registerPush();
+    try {
+      const me = await api('/me');
+      session.set({ me, userId: me.userId });
+      if (me.tenantId) {
+        const slug = s.tenantSlug ?? me.memberships.find((m: any) => m.tenantId === me.tenantId)?.tenantSlug;
+        const b = await api(`/public/tenants/${slug}/branding`, { auth: false }).catch(() => null);
+        session.set({ branding: b?.branding });
       }
-    })();
-  }, []);
-  return <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center' }}><ActivityIndicator /></View>;
+      router.replace('/(tabs)');
+    } catch (e: any) {
+      if (e?.status === 401) router.replace('/login');
+      else setErr(e?.message ?? 'Network problem');
+    }
+  };
+  useEffect(() => { void go(); }, []);
+  return <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center', padding: 24, backgroundColor: '#F6F7FB' }}>{err ? <ErrorState message={`${err}. Check your connection.`} onRetry={go} /> : <ActivityIndicator />}</View>;
 }

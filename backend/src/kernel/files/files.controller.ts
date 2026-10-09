@@ -38,8 +38,8 @@ const PURPOSES: Record<string, { mimes: string[]; maxBytes: number; publicAllowe
   logo: { mimes: IMAGES, maxBytes: 5 * MB, publicAllowed: true, uploadPerm: 'org.settings.edit', viewPerm: null },
   website: { mimes: [...IMAGES, 'application/pdf', 'video/mp4', 'video/webm'], maxBytes: 100 * MB, publicAllowed: true, uploadPerm: 'cms.page.edit', viewPerm: null },
   homework: { mimes: [...DOCS, 'audio/mpeg', 'audio/mp4', 'audio/webm', 'video/mp4'], maxBytes: 50 * MB, publicAllowed: false, uploadPerm: null, viewPerm: null },
-  document: { mimes: DOCS, maxBytes: 25 * MB, publicAllowed: false, uploadPerm: null, viewPerm: 'people.student.view' },
-  admission: { mimes: DOCS, maxBytes: 25 * MB, publicAllowed: false, uploadPerm: null, viewPerm: 'people.student.view' },
+  document: { mimes: DOCS, maxBytes: 25 * MB, publicAllowed: false, uploadPerm: null, viewPerm: 'people.document.view' },
+  admission: { mimes: DOCS, maxBytes: 25 * MB, publicAllowed: false, uploadPerm: null, viewPerm: 'people.document.view' },
   import: { mimes: SHEETS, maxBytes: 20 * MB, publicAllowed: false, uploadPerm: null, viewPerm: 'reports.export.export' },
   attachment: { mimes: Object.keys(MIME_EXT), maxBytes: 200 * MB, publicAllowed: false, uploadPerm: null, viewPerm: null },
 };

@@ -1,5 +1,5 @@
 import type { Metadata } from 'next';
-import { jsonLd } from '@/lib/sanitize';
+import { jsonLd, sanitize } from '@/lib/sanitize';
 import { notFound, permanentRedirect } from 'next/navigation';
 import { getSite, getPage, getPosts, getPost } from '@/lib/site';
 import { Blocks } from '@/components/blocks';
@@ -66,7 +66,7 @@ export default async function SitePage({ params, searchParams }: P) {
   return (
     <>
       {slug.length > 0 && <div className="border-b border-line bg-surface"><div className="mx-auto max-w-6xl px-4 py-8"><h1 className="text-3xl font-bold">{page.page.title}</h1></div></div>}
-      <Blocks blocks={page.page.blocks} site={site} host={host} />
+      <Blocks blocks={page.page.blocks} site={site} host={host} sanitize={sanitize} />
       {page.jsonLd && <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: jsonLd(page.jsonLd) }} />}
     </>
   );

@@ -1,13 +1,11 @@
 import { Body, Controller, Get, Param, Post, Query } from '@nestjs/common';
 import { Exams } from '@aadhyay/contracts';
-import { Can, RequireModule } from '../../kernel/auth/decorators';
+import { Can, RequireModule, Scoped } from '../../kernel/auth/decorators';
 import { Z } from '../../common/zod.pipe';
 import { ExamsService } from './exams.service';
 import { PeopleService } from '../people/people.service';
 import { crudController } from '../../common/crud';
 import { gradeScale, exam, examSchedule, examGroup } from '../../db/schema';
-import { hasPermission } from '@aadhyay/contracts';
-import { Ctx } from '../../kernel/context/request-context';
 
 @RequireModule('exams')
 @Controller('exams')
@@ -22,11 +20,11 @@ export class ExamsController {
   detail(@Param('id') id: string) {
     return this.svc.examDetail(id);
   }
-  @Can('exams.marks.view', 'exams.marks.create') @Get('marks/:scheduleId')
+  @Can('exams.marks.view', 'exams.marks.create') @Scoped() @Get('marks/:scheduleId')
   grid(@Param('scheduleId') id: string, @Query('sectionId') sectionId: string) {
     return this.svc.marksGrid(id, sectionId);
   }
-  @Can('exams.marks.create', 'exams.marks.edit') @Post('marks')
+  @Can('exams.marks.create', 'exams.marks.edit') @Scoped() @Post('marks')
   marks(@Body(Z(Exams.marksInput)) b: any) {
     return this.svc.enterMarks(b);
   }
@@ -42,15 +40,22 @@ export class ExamsController {
   unpublish(@Param('id') id: string) {
     return this.svc.unpublish(id);
   }
-  @Can('exams.exam.view') @Get(':id/sections/:sectionId/results')
+  @Can('exams.result.view') @Scoped() @Get(':id/sections/:sectionId/results')
   results(@Param('id') id: string, @Param('sectionId') sid: string) {
     return this.svc.sectionResults(id, sid);
+  }
+  /** All results for a student (Student 360). Families see published results only. */
+  @Get('students/:studentId/results')
+  async studentResults(@Param('studentId') sid: string) {
+    const d = await this.people.assertCanSeeStudent(sid, 'exams.result.view');
+    return this.svc.studentResults(sid, d.permission !== 'exams.result.view');
   }
   /** Parents/students see only published results. */
   @Get('report-card/:studentId')
   async reportCard(@Param('studentId') sid: string, @Query('groupId') groupId: string) {
-    await this.people.assertCanSeeStudent(sid);
-    const staffView = hasPermission(Ctx.get().permissions ?? [], 'exams.exam.view');
+    const d = await this.people.assertCanSeeStudent(sid, 'exams.result.view');
+    // Staff see draft results; families only published ones.
+    const staffView = d.permission === 'exams.result.view';
     return this.svc.reportCard(sid, groupId, !staffView);
   }
 }

@@ -5,7 +5,7 @@ import { exam, examGroup, examSchedule, markEntry, result, gradeScale, enrollmen
 import { Ctx } from '../../kernel/context/request-context';
 import { EventsService } from '../../kernel/events/events.service';
 import { currentSession } from '../academics/session.util';
-import { assertSectionAccess } from '../academics/section-access';
+import { Authz } from '../../kernel/authz/authz';
 import { badRequest, notFound } from '../../common/errors';
 import { gradeFor, rank, type Band } from './grading';
 import { ZERO_UUID } from '../../common/ids';
@@ -38,6 +38,7 @@ export class ExamsService {
     return this.db.t(async (tx) => {
       const [s] = await tx.select().from(examSchedule).where(eq(examSchedule.id, scheduleId));
       if (!s) throw notFound('Schedule');
+      Authz.assertAny(['exams.marks.view', 'exams.marks.create'], { sectionId, subjectId: s.subjectId });
       const sess = await currentSession(tx);
       const rows = await tx.select({ studentId: student.id, name: student.name, rollNo: enrollment.rollNo, marks: markEntry.marks, isAbsent: markEntry.isAbsent, remarks: markEntry.remarks })
         .from(enrollment).innerJoin(student, eq(student.id, enrollment.studentId))
@@ -56,7 +57,7 @@ export class ExamsService {
       for (const x of b.entries) if (x.marks !== null && x.marks > s.maxMarks) throw badRequest(`Marks cannot exceed ${s.maxMarks}`);
       const sess = await currentSession(tx);
       const secs = await tx.selectDistinct({ sectionId: enrollment.sectionId }).from(enrollment).where(and(inArray(enrollment.studentId, b.entries.map((x) => x.studentId)), eq(enrollment.sessionId, sess.id)));
-      for (const sc of secs) await assertSectionAccess(tx, sc.sectionId);
+      for (const sc of secs) Authz.assertAny(['exams.marks.create', 'exams.marks.edit'], { sectionId: sc.sectionId, subjectId: s.subjectId });
       for (const x of b.entries) {
         await tx.insert(markEntry).values({ tenantId: Ctx.tenantId(), scheduleId: b.scheduleId, studentId: x.studentId, marks: x.isAbsent ? null : x.marks, isAbsent: x.isAbsent, remarks: x.remarks, enteredBy: Ctx.userId() })
           .onConflictDoUpdate({ target: [markEntry.scheduleId, markEntry.studentId], set: { marks: x.isAbsent ? null : x.marks, isAbsent: x.isAbsent, remarks: x.remarks, enteredBy: Ctx.userId() } });
@@ -125,6 +126,7 @@ export class ExamsService {
   }
 
   async sectionResults(examId: string, sectionId: string) {
+    Authz.assert('exams.result.view', { sectionId });
     return this.db.t((tx) => tx.select({ studentId: student.id, name: student.name, admissionNo: student.admissionNo, total: result.totalMarks, max: result.maxMarks, percentage: result.percentage, grade: result.grade, rank: result.rank, isPass: result.isPass, publishedAt: result.publishedAt })
       .from(result).innerJoin(student, eq(student.id, result.studentId)).where(and(eq(result.examId, examId), eq(result.sectionId, sectionId))).orderBy(asc(result.rank)));
   }
@@ -156,5 +158,11 @@ export class ExamsService {
         attendance: { working: att?.total ?? 0, present: att?.present ?? 0 },
       };
     });
+  }
+
+  async studentResults(studentId: string, publishedOnly: boolean) {
+    return this.db.t((tx) => tx.execute(sql`select r.exam_id as "examId", x.name as exam, g.name as "group", g.id as "groupId", r.total_marks as total, r.max_marks as max, r.percentage, r.grade, r.rank, r.is_pass as "isPass", r.published_at as "publishedAt"
+      from results r join exams x on x.id = r.exam_id left join exam_groups g on g.id = x.group_id
+      where r.student_id = ${studentId} ${publishedOnly ? sql`and r.published_at is not null` : sql``} order by x.created_at desc`).then((r) => r.rows));
   }
 }

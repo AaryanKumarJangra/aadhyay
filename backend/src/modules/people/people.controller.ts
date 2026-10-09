@@ -1,7 +1,7 @@
 import { Body, Controller, Get, Param, Patch, Post, Query } from '@nestjs/common';
 import { z } from 'zod';
 import { People } from '@aadhyay/contracts';
-import { Can, RequireModule } from '../../kernel/auth/decorators';
+import { Can, RequireModule, Scoped } from '../../kernel/auth/decorators';
 import { Z } from '../../common/zod.pipe';
 import { PeopleService } from './people.service';
 import { crudController } from '../../common/crud';
@@ -12,7 +12,7 @@ import { department, designation, document } from '../../db/schema';
 export class PeopleController {
   constructor(private readonly people: PeopleService) {}
 
-  @Can('people.student.view') @Get('students')
+  @Can('people.student.view') @Scoped() @Get('students')
   list(@Query() q: any) {
     return this.people.listStudents({ ...q, limit: q.limit ? Number(q.limit) : undefined });
   }
@@ -28,6 +28,12 @@ export class PeopleController {
   async get(@Param('id') id: string) {
     await this.people.assertCanSeeStudent(id);
     return this.people.getStudent(id);
+  }
+  /** Student 360 timeline; each source filtered by the viewer's permissions. */
+  @Get('students/:id/timeline')
+  async timeline(@Param('id') id: string) {
+    await this.people.assertCanSeeStudent(id);
+    return this.people.timeline(id);
   }
   @Can('people.student.edit') @Patch('students/:id')
   update(@Param('id') id: string, @Body(Z(People.studentUpdate)) b: any) {
@@ -56,4 +62,4 @@ export class PeopleController {
 
 export const DepartmentCrud = crudController({ path: 'people/departments', module: 'people', perm: 'people.staff', table: department as any, create: z.object({ name: z.string().min(1) }), sort: { column: department.name, dir: 'asc' } });
 export const DesignationCrud = crudController({ path: 'people/designations', module: 'people', perm: 'people.staff', table: designation as any, create: z.object({ name: z.string().min(1) }), sort: { column: designation.name, dir: 'asc' } });
-export const DocumentCrud = crudController({ path: 'people/documents', module: 'people', perm: 'people.student', table: document as any, create: z.object({ ownerType: z.enum(['student', 'staff']), ownerId: z.string().uuid(), kind: z.string(), fileId: z.string().uuid() }), filters: { ownerId: document.ownerId, ownerType: document.ownerType } });
+export const DocumentCrud = crudController({ path: 'people/documents', module: 'people', perm: 'people.document', table: document as any, create: z.object({ ownerType: z.enum(['student', 'staff']), ownerId: z.string().uuid(), kind: z.string(), fileId: z.string().uuid() }), filters: { ownerId: document.ownerId, ownerType: document.ownerType } });

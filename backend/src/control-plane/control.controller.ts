@@ -5,6 +5,7 @@ import { z } from 'zod';
 import * as argon2 from 'argon2';
 import { randomBytes } from 'node:crypto';
 import { Billing, Org, MODULE_KEYS } from '@aadhyay/contracts';
+import { PlatformAudit } from './platform.controller';
 import { DbService } from '../db/db.service';
 import { tenant, tenantDomain, tenantModule, subscription, invoice, platformUser, priceBookItem, plan, companyExpense, platformLead, appFlavour, usageRecord, student, staff, wallet } from '../db/schema';
 import { Platform, Public } from '../kernel/auth/decorators';
@@ -35,6 +36,7 @@ export class ControlController {
   constructor(
     private readonly db: DbService, private readonly tokens: TokenService, private readonly prov: ProvisioningService, private readonly billing: BillingService,
     private readonly finance: FinanceService, private readonly lifecycle: LifecycleService, private readonly tenants: TenantService, private readonly loginGuard: LoginGuard,
+    private readonly audit: PlatformAudit,
   ) {}
 
   @Public() @Post('auth/login')
@@ -105,10 +107,12 @@ export class ControlController {
 
   @Platform('ops', 'account_manager') @Patch('tenants/:id/modules')
   async toggleModule(@Param('id') id: string, @Body(Z(z.object({ moduleKey: z.enum(MODULE_KEYS), enabled: z.boolean() }))) b: any) {
+    const [prev] = await this.db.admin.select().from(tenantModule).where(and(eq(tenantModule.tenantId, id), eq(tenantModule.moduleKey, b.moduleKey)));
     await this.db.admin.insert(tenantModule).values({ tenantId: id, moduleKey: b.moduleKey, enabled: b.enabled, source: 'manual' })
       .onConflictDoUpdate({ target: [tenantModule.tenantId, tenantModule.moduleKey], set: { enabled: b.enabled, source: 'manual' } });
     const [t] = await this.db.admin.select().from(tenant).where(eq(tenant.id, id));
     await this.tenants.invalidate(t!);
+    await this.audit.record({ action: b.enabled ? 'module.enable' : 'module.disable', entity: 'tenant_module', entityId: b.moduleKey, tenantId: id, before: { enabled: prev?.enabled ?? false }, after: { enabled: b.enabled } });
     return { ok: true };
   }
 
@@ -120,6 +124,7 @@ export class ControlController {
     const status = t.status === 'trial' ? 'trial' : 'active';
     await this.db.admin.update(tenant).set({ periodEndsAt: new Date(base.getTime() + b.days * DAY), status, graceEndsAt: null, suspendedAt: null, settings: sql`${tenant.settings} || ${JSON.stringify({ lastExtension: { days: b.days, reason: b.reason, by: Ctx.get().platformUser?.id } })}::jsonb` }).where(eq(tenant.id, id));
     await this.tenants.invalidate(t);
+    await this.audit.record({ action: 'tenant.extend', entity: 'tenant', entityId: id, tenantId: id, before: { periodEndsAt: t.periodEndsAt, status: t.status }, after: { days: b.days, status }, reason: b.reason });
     return { ok: true };
   }
 
@@ -141,8 +146,10 @@ export class ControlController {
   }
 
   @Platform('finance') @Post('tenants/:id/wallet-adjust')
-  walletAdjust(@Param('id') id: string, @Body(Z(z.object({ amountPaise: z.number().int(), reason: z.string().min(3) }))) b: any) {
-    return this.billing.walletAdjust(id, b.amountPaise, 'adjustment', b.reason);
+  async walletAdjust(@Param('id') id: string, @Body(Z(z.object({ amountPaise: z.number().int(), reason: z.string().min(3) }))) b: any) {
+    const r = await this.billing.walletAdjust(id, b.amountPaise, 'adjustment', b.reason);
+    await this.audit.record({ action: 'wallet.adjust', entity: 'wallet', tenantId: id, after: { amountPaise: b.amountPaise }, reason: b.reason });
+    return r;
   }
 
   @Platform() @Get('price-book')
@@ -151,7 +158,12 @@ export class ControlController {
   }
 
   @Platform('super_admin') @Patch('price-book/:code')
-  async updatePrice(@Param('code') code: string, @Body(Z(z.object({ listPaise: z.number().int().nonnegative(), minPaise: z.number().int().nonnegative().optional(), maxPaise: z.number().int().nonnegative().optional(), isActive: z.boolean().optional() }))) b: any) {
+  async updatePrice(@Param('code') code: string, @Body(Z(z.object({ listPaise: z.number().int().nonnegative(), minPaise: z.number().int().nonnegative().optional(), maxPaise: z.number().int().nonnegative().optional(), isActive: z.boolean().optional(), reason: z.string().trim().min(5) }))) body: any) {
+    const { reason, ...b } = body;
+    if (b.minPaise !== undefined && b.maxPaise !== undefined && b.minPaise > b.maxPaise) throw new AppError('VALIDATION_FAILED', 'Minimum price cannot exceed maximum price');
+    const [beforeItem] = await this.db.admin.select().from(priceBookItem).where(eq(priceBookItem.code, code));
+    const [beforePlan] = beforeItem ? [undefined] : await this.db.admin.select().from(plan).where(eq(plan.code, code));
+    await this.audit.record({ action: 'price.update', entity: beforeItem ? 'price_book_item' : 'plan', entityId: code, before: beforeItem ? { listPaise: beforeItem.listPaise, minPaise: beforeItem.minPaise, maxPaise: beforeItem.maxPaise, isActive: beforeItem.isActive } : beforePlan ? { listPaise: beforePlan.pricePerUnitPaise, minPaise: beforePlan.rangeMinPaise, maxPaise: beforePlan.rangeMaxPaise } : null, after: b, reason });
     const [r] = await this.db.admin.update(priceBookItem).set({ ...b, effectiveFrom: new Date() }).where(eq(priceBookItem.code, code)).returning();
     if (!r) {
       const [p] = await this.db.admin.update(plan).set({ pricePerUnitPaise: b.listPaise, rangeMinPaise: b.minPaise, rangeMaxPaise: b.maxPaise }).where(eq(plan.code, code)).returning();

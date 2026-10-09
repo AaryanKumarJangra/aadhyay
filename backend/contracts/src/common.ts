@@ -6,7 +6,7 @@ export const phoneIN = z
   .trim()
   .transform((v) => v.replace(/[\s-]/g, ''))
   .transform((v) => (v.startsWith('+') ? v : v.length === 10 ? `+91${v}` : v.startsWith('91') && v.length === 12 ? `+${v}` : v))
-  .pipe(z.string().regex(/^\+[1-9]\d{7,14}$/, 'Invalid phone number'));
+  .pipe(z.string().regex(/^\+[1-9]\d{7,14}$/, 'Enter a valid mobile number, e.g. 98765 43210'));
 export const isoDate = z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'Use YYYY-MM-DD');
 export const paise = z.number().int().nonnegative();
 export const listQuery = z.object({

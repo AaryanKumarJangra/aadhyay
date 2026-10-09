@@ -2,7 +2,8 @@ import { Body, Controller, Get, Param, Post, Put, Query } from '@nestjs/common';
 import { and, desc, eq, isNull, sql, inArray } from 'drizzle-orm';
 import { z } from 'zod';
 import { Comms } from '@aadhyay/contracts';
-import { Can, RequireModule, TenantOptional, NoTenant } from '../../kernel/auth/decorators';
+import { Can, RequireModule, TenantOptional, NoTenant, Scoped } from '../../kernel/auth/decorators';
+import { Authz, denied } from '../../kernel/authz/authz';
 import { Z } from '../../common/zod.pipe';
 import { DbService } from '../../db/db.service';
 import { notification, pushToken, notice, commRoutingRule, notificationTemplate, messageDelivery } from '../../db/schema';
@@ -35,12 +36,22 @@ export class CommsController {
   notices() {
     return this.db.t((tx) => tx.select().from(notice).orderBy(desc(notice.publishAt)).limit(100));
   }
-  @Can('comms.notice.create') @Post('notices')
+  @Can('comms.notice.create') @Scoped() @Post('notices')
   async createNotice(@Body(Z(Comms.noticeInput)) b: any) {
+    await this.assertAudience(b.audience);
     const publishAt = b.publishAt ? new Date(b.publishAt) : new Date();
     const [n] = await this.db.t((tx) => tx.insert(notice).values({ tenantId: Ctx.tenantId(), title: b.title, body: b.body, audience: b.audience, attachments: b.attachments, publishAt, status: publishAt > new Date() ? 'scheduled' : 'published', createdBy: Ctx.userId() }).returning());
     await this.events.emit(b.urgent ? 'emergency.broadcast' : 'notice.published', { noticeId: n!.id, title: b.title, body: b.body, audience: b.audience }, { delayMs: Math.max(0, publishAt.getTime() - Date.now()) });
     return n;
+  }
+
+  /** Senders limited to assigned sections may address only those sections (not the whole school, staff or a class). */
+  private async assertAudience(a: { all?: boolean; classIds?: string[]; sectionIds?: string[]; staff?: boolean }) {
+    if (Authz.filter('comms.notice.create').kind === 'all') return;
+    if (a.all || a.staff || a.classIds?.length || !a.sectionIds?.length) {
+      throw denied({ allowed: false, code: 'OUT_OF_SCOPE', permission: 'comms.notice.create', reason: 'You can send notices only to the sections you are assigned to. Choose those sections as the audience.' });
+    }
+    Authz.assert('comms.notice.create', { sectionIds: a.sectionIds });
   }
 
   @Can('comms.settings.view', 'comms.notice.view') @Get('routing')

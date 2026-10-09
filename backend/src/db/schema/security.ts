@@ -21,3 +21,23 @@ export const securityEvent = pgTable(
   },
   (t) => [index('security_events_subject_at_idx').on(t.subject, t.at), index('security_events_kind_at_idx').on(t.kind, t.at)],
 );
+
+/** Control-plane actions (company staff). Not tenant data; revoked from the tenant runtime role. */
+export const platformAuditLog = pgTable(
+  'platform_audit_logs',
+  {
+    id: uuid('id').primaryKey().$defaultFn(() => uuidv7()),
+    actorId: uuid('actor_id'),
+    actorRole: text('actor_role'),
+    action: text('action').notNull(),
+    targetTenant: uuid('target_tenant'),
+    entity: text('entity').notNull(),
+    entityId: text('entity_id'),
+    before: jsonb('before').$type<any>(),
+    after: jsonb('after').$type<any>(),
+    reason: text('reason'),
+    ip: text('ip'),
+    at: timestamp('at', { withTimezone: true, mode: 'date' }).defaultNow().notNull(),
+  },
+  (t) => [index('platform_audit_logs_target_at_idx').on(t.targetTenant, t.at), index('platform_audit_logs_at_idx').on(t.at)],
+);

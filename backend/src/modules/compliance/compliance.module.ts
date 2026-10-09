@@ -44,7 +44,7 @@ export class ComplianceController {
   constructor(private readonly svc: ComplianceService) {}
   /** Any user (parent, staff) can raise an access/correction/erasure/grievance request. */
   @Post('dpdp-requests') request(@Body(Z(z.object({ kind: z.enum(['access', 'correct', 'erase', 'grievance', 'withdraw_consent']), details: z.string().min(5) }))) b: any) { return this.svc.request(b); }
-  @AllowSuspended() @Can('compliance.export.export', 'org.*') @Post('export') export() { return this.svc.exportAll(); }
+  @AllowSuspended() @Can('compliance.export.export') @Post('export') export() { return this.svc.exportAll(); }
 }
 
 export const DpdpCrud = crudController({ path: 'compliance/dpdp', module: 'compliance', perm: 'compliance.dpdp', table: dpdpRequest as any, create: z.object({ kind: z.string(), details: z.string() }), update: z.object({ status: z.enum(['open', 'in_progress', 'closed']), closedAt: z.coerce.date().optional() }), filters: { status: dpdpRequest.status } });

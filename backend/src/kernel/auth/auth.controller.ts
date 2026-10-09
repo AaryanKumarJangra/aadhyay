@@ -69,13 +69,19 @@ export class MeController {
     const c = Ctx.get();
     if (!c.userId) throw new AppError('UNAUTHENTICATED', 'Login required');
     const memberships = await this.auth.memberships(c.userId);
+    const profile = await this.auth.profile(c.userId);
     return {
       userId: c.userId,
+      user: profile,
       tenantId: c.tenantId ?? null,
       tenantStatus: c.tenantStatus ?? null,
       kinds: c.kinds ?? [],
       personIds: c.personIds ?? {},
       permissions: [...(c.permissions ?? [])],
+      // For navigation and UI gating (never security): grants without resolved ids, roles, enabled modules.
+      grants: (c.grants ?? []).map(({ pattern, scope, conditions, source }) => ({ pattern, scope, conditions, source: { roleKey: source.roleKey, roleName: source.roleName } })),
+      roles: c.roles ?? [],
+      modules: c.modules ?? [],
       memberships,
     };
   }

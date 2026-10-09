@@ -1,9 +1,10 @@
 import { CanActivate, ExecutionContext, Injectable } from '@nestjs/common';
 import { Reflector } from '@nestjs/core';
 import { eq } from 'drizzle-orm';
-import { hasPermission, type ModuleKey } from '@aadhyay/contracts';
+import { decide, scopeFilter, SCOPE_LABEL, type Decision, type ModuleKey } from '@aadhyay/contracts';
 import type { FastifyRequest } from 'fastify';
 import { AppError, forbidden } from '../../common/errors';
+import { denied, principal } from '../authz/authz';
 import { Ctx } from '../context/request-context';
 import { TokenService, AccessClaims } from './token.service';
 import { TenantService } from '../tenancy/tenant.service';
@@ -13,7 +14,7 @@ import { DbService } from '../../db/db.service';
 import { attendanceDevice } from '../../db/schema';
 import { sha256 } from '../../common/crypto';
 import {
-  META_ALLOW_SUSPENDED, META_DEVICE, META_MODULE, META_PERM, META_PLATFORM, META_PUBLIC, META_TENANT,
+  META_ALLOW_SUSPENDED, META_DEVICE, META_MODULE, META_PERM, META_PLATFORM, META_PUBLIC, META_SCOPED, META_TENANT,
 } from './decorators';
 
 const BLOCKED_STATES = new Set(['suspended', 'archived', 'purged']);
@@ -54,6 +55,7 @@ export class AccessGuard implements CanActivate {
       if (!d || !d.isActive) throw new AppError('UNAUTHENTICATED', 'Invalid device key');
       ctx.tenantId = d.tenantId;
       ctx.permissions = new Set(['attendance.device.*']);
+      ctx.grants = [{ pattern: 'attendance.device.manage', scope: 'tenant', source: { roleKey: 'device', roleName: 'Attendance device' } }];
       (req as any).device = d;
       return true;
     }
@@ -101,6 +103,7 @@ export class AccessGuard implements CanActivate {
         ctx.tenantSlug = t.slug;
         ctx.tenantStatus = t.status;
         ctx.tenantTz = t.timezone;
+        ctx.modules = [...(await this.tenants.enabledModules(t.id))];
         if (ctx.userId) {
           const acc = await this.access.load(t.id, ctx.userId);
           if (!acc && tenantMode === 'required' && !isPublic) throw forbidden('You are not a member of this institution');
@@ -109,7 +112,9 @@ export class AccessGuard implements CanActivate {
             ctx.kinds = acc.kinds;
             ctx.personIds = acc.personIds;
             ctx.permissions = new Set(acc.permissions);
-            ctx.scopes = { all: acc.scopes };
+            ctx.grants = acc.grants;
+            ctx.roles = acc.roles;
+            ctx.studentIds = acc.studentIds;
           }
         }
         if (BLOCKED_STATES.has(t.status) && !isPublic && !this.meta<boolean>(META_ALLOW_SUSPENDED, ec)) {
@@ -121,11 +126,21 @@ export class AccessGuard implements CanActivate {
       }
     }
 
-    // 5. Permission
+    // 5. Permission: any listed key, held institution-wide — or in any scope when the handler enforces scope itself.
     const perms = this.meta<string[]>(META_PERM, ec);
     if (perms?.length) {
-      const granted = ctx.permissions ?? new Set<string>();
-      if (!perms.some((p) => hasPermission(granted, p))) throw forbidden();
+      const scoped = !!this.meta<boolean>(META_SCOPED, ec);
+      const p = principal();
+      let best: Decision | undefined;
+      for (const key of perms) {
+        const d = decide(p, key);
+        if (d.allowed && (scoped || key === 'self.*' || scopeFilter(p, key).kind === 'all')) return true;
+        const deny: Decision = d.allowed
+          ? { ...d, allowed: false, code: 'OUT_OF_SCOPE', reason: `Your role \u201c${d.source?.roleName}\u201d allows this only for ${SCOPE_LABEL[d.scope!].toLowerCase()}; this page covers the whole institution.` }
+          : d;
+        if (!best || (best.code === 'NO_PERMISSION' && deny.code !== 'NO_PERMISSION')) best = deny;
+      }
+      throw denied(best!);
     }
     return true;
   }

@@ -39,7 +39,7 @@ export class LearningService {
   }
   /** Start (or resume) an attempt. Correct answers are never sent to the client. */
   async startAttempt(testId: string, studentId: string) {
-    await this.people.assertCanSeeStudent(studentId);
+    await this.people.assertCanSeeStudent(studentId, 'online-exams.test.view');
     return this.db.t(async (tx) => {
       const [t] = await tx.select().from(onlineTest).where(eq(onlineTest.id, testId));
       if (!t || !t.publishedAt) throw notFound('Test');
@@ -59,7 +59,7 @@ export class LearningService {
     return this.db.t(async (tx) => {
       const [a] = await tx.select().from(onlineTestAttempt).where(eq(onlineTestAttempt.id, attemptId));
       if (!a) throw notFound('Attempt');
-      await this.people.assertCanSeeStudent(a.studentId);
+      await this.people.assertCanSeeStudent(a.studentId, 'online-exams.test.view');
       if (a.submittedAt) throw badRequest('Already submitted');
       const [t] = await tx.select().from(onlineTest).where(eq(onlineTest.id, a.testId));
       const late = Date.now() > Math.min(a.startedAt.getTime() + t!.durationMin * 60_000 + 60_000, t!.endsAt.getTime() + 60_000);
@@ -102,7 +102,7 @@ export class LearningService {
     });
   }
   async progress(contentId: string, studentId: string, pct: number) {
-    await this.people.assertCanSeeStudent(studentId);
+    await this.people.assertCanSeeStudent(studentId, 'online-exams.test.view');
     const [r] = await this.db.t((tx) => tx.insert(contentProgress).values({ tenantId: Ctx.tenantId(), contentId, studentId, progress: pct, completed: pct >= 95 })
       .onConflictDoUpdate({ target: [contentProgress.contentId, contentProgress.studentId], set: { progress: sql`greatest(${contentProgress.progress}, ${pct})`, completed: sql`${contentProgress.completed} or ${pct >= 95}` } }).returning());
     return r;

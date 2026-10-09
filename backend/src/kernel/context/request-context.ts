@@ -1,10 +1,6 @@
 import { AsyncLocalStorage } from 'node:async_hooks';
+import type { Grant } from '@aadhyay/contracts';
 import type { Tx } from '../../db/db.service';
-
-export interface Scope {
-  kind: 'tenant' | 'branch' | 'class' | 'section' | 'own';
-  id?: string | null;
-}
 export interface RequestCtx {
   requestId: string;
   tenantId?: string;
@@ -16,8 +12,11 @@ export interface RequestCtx {
   membershipIds?: string[];
   kinds?: string[]; // staff | student | guardian | alumni
   personIds?: Record<string, string>; // kind -> person id
-  permissions?: Set<string>;
-  scopes?: Record<string, Scope[]>; // permission prefix -> scopes (from role assignments)
+  permissions?: Set<string>; // granted patterns (legacy checks); decisions use `grants`
+  grants?: Grant[];
+  roles?: { key: string; name: string }[];
+  modules?: string[]; // enabled modules of the tenant
+  studentIds?: string[]; // "own" students: self and/or children
   platformUser?: { id: string; role: string };
   ip?: string;
   userAgent?: string;
@@ -48,6 +47,7 @@ export const Ctx = {
   },
   /** Run fn as a specific tenant (workers / system jobs). */
   asTenant<T>(tenantId: string, fn: () => T, extra: Partial<RequestCtx> = {}): T {
-    return als.run({ requestId: 'system', tenantId, permissions: new Set(['*']), ...extra }, fn);
+    const system = { pattern: '*', scope: 'tenant' as const, source: { roleKey: 'system', roleName: 'System' } };
+    return als.run({ requestId: 'system', tenantId, permissions: new Set(['*']), grants: [system], ...extra }, fn);
   },
 };

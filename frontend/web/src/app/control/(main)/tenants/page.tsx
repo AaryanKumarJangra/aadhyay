@@ -1,19 +1,16 @@
-import Link from 'next/link';
-import { capi } from '@/lib/control-api';
-import { PageHeader, Table, Badge } from '@/components/ui';
-import { date } from '@/lib/format';
-export default async function Tenants({ searchParams }: { searchParams: Promise<{ q?: string; status?: string }> }) {
-  const sp = await searchParams;
-  const rows = await capi(`/tenants?${new URLSearchParams(Object.entries(sp).filter(([, v]) => v) as any)}`);
+import { Rocket } from 'lucide-react';
+import { capi, getPlatformMe, platformCan } from '@/lib/control-api';
+import { LinkButton, PageHeader } from '@/components/ui';
+import { TenantsTable, type TenantRow } from '@/components/control/tenants-table';
+
+export const metadata = { title: 'Institutions' };
+export default async function Tenants() {
+  const [rows, me] = await Promise.all([capi<TenantRow[]>('/tenants-overview'), getPlatformMe()]);
   return (
     <>
-      <PageHeader title="Institutions" />
-      <Table rows={rows} cols={[
-        { key: 'name', label: 'Name', render: (t: any) => <Link className="font-medium text-brand" href={`/control/tenants/${t.id}`}>{t.name}</Link> },
-        { key: 'city', label: 'City' }, { key: 'segment', label: 'Type' }, { key: 'planCode', label: 'Plan' },
-        { key: 'status', label: 'Status', render: (t: any) => <Badge tone={t.status === 'active' ? 'ok' : t.status === 'trial' ? 'brand' : 'warn'}>{t.status}</Badge> },
-        { key: 'periodEndsAt', label: 'Period ends', render: (t: any) => date(t.periodEndsAt) },
-      ]} />
+      <PageHeader title="Institutions" description={`${rows.length} institutions · ${rows.filter((r) => r.status === 'active').length} paying · ${rows.filter((r) => r.status === 'trial').length} in trial`}
+        actions={platformCan(me, 'ops', 'account_manager') ? <LinkButton href="/control/onboarding" icon={<Rocket />}>Onboard institution</LinkButton> : undefined} />
+      <TenantsTable rows={rows} />
     </>
   );
 }

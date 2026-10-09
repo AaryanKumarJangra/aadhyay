@@ -95,6 +95,11 @@ export const sitePage = pgTable(
     status: E.contentStatusEnum('status').default('draft').notNull(),
     publishAt: timestamp('publish_at', { withTimezone: true, mode: 'date' }),
     version: integer('version').default(1).notNull(),
+    draft: jsonb('draft').$type<{ title: string; blocks: any[]; seo: any; updatedAt: string; updatedBy: string | null } | null>(),  // unpublished working copy
+    reviewStatus: text('review_status').default('none').notNull(),  // none | in_review | changes_requested
+    reviewNote: text('review_note'),
+    submittedBy: text('submitted_by'),
+    submittedAt: timestamp('submitted_at', { withTimezone: true, mode: 'date' }),
     history: jsonb('history').$type<any>().default([]).notNull(),
     updatedBy: text('updated_by'),
     createdAt: timestamp('created_at', { withTimezone: true, mode: 'date' }).defaultNow().notNull(),

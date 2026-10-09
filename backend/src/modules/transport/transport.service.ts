@@ -1,8 +1,9 @@
 import { Injectable } from '@nestjs/common';
-import { and, asc, desc, eq, gte, inArray, isNull, sql } from 'drizzle-orm';
+import { and, asc, desc, eq, gte, inArray, isNull, or, sql } from 'drizzle-orm';
 import { DbService } from '../../db/db.service';
 import { vehicle, route, stop, studentTransport, trip, locationPing, tripEvent, trackingLink, student, guardian, studentGuardian, staff } from '../../db/schema';
 import { Ctx } from '../../kernel/context/request-context';
+import { Authz } from '../../kernel/authz/authz';
 import { EventsService } from '../../kernel/events/events.service';
 import { RedisService } from '../../kernel/redis/redis.service';
 import { RealtimeBus } from '../../kernel/redis/realtime-bus';
@@ -51,9 +52,23 @@ export class TransportService {
       .where(and(eq(studentTransport.vehicleId, vehicleId), eq(studentTransport.direction, direction), eq(studentTransport.isActive, true), eq(student.status, 'active'))).orderBy(asc(stop.order)));
   }
 
-  private async assertDriver(vehicleId: string) {
+  async driverSetup() {
+    const all = Authz.filter('transport.trip.manage').kind === 'all';
+    const sid = Ctx.get().personIds?.staff;
+    return this.db.t(async (tx) => {
+      const vehicles = await tx.select({ id: vehicle.id, regNo: vehicle.regNo, name: vehicle.name, capacity: vehicle.capacity }).from(vehicle)
+        .where(and(eq(vehicle.isActive, true), all ? undefined : sid ? or(eq(vehicle.driverStaffId, sid), eq(vehicle.attendantStaffId, sid)) : sql`false`));
+      const ids = vehicles.map((v) => v.id);
+      const routes = ids.length ? await tx.select({ id: route.id, name: route.name, vehicleId: route.vehicleId }).from(route).where(all ? undefined : inArray(route.vehicleId, ids)) : [];
+      const [running] = ids.length ? await tx.select().from(trip).where(and(inArray(trip.vehicleId, ids), eq(trip.status, 'running'))).limit(1) : [];
+      return { vehicles, routes, runningTrip: running ?? null };
+    });
+  }
+
+  /** Drivers/attendants act only on the vehicle they are assigned to; trip managers on any. */
+  async assertDriver(vehicleId: string) {
     const c = Ctx.get();
-    if (hasPermission(c.permissions ?? [], 'transport.trip.manage')) return;
+    if (Authz.filter('transport.trip.manage').kind === 'all') return;
     const [v] = await this.db.t((tx) => tx.select().from(vehicle).where(eq(vehicle.id, vehicleId)));
     if (!v) throw notFound('Vehicle');
     const sid = c.personIds?.staff;

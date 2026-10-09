@@ -1,35 +1,126 @@
 @import 'tailwindcss';
 
-/* Aadhyay design tokens — light/dark, tenant brand colours injected as --brand / --accent at runtime */
+/*
+ * Aadhyay design tokens (docs/redesign/04-DESIGN-SYSTEM.md).
+ * Light, premium, data-rich: off-white canvas, white and subtly glassy surfaces, hairline borders, very light shadows.
+ * Tenant brand colour arrives at runtime as --brand (and --accent); everything brand-tinted derives from it.
+ * Spacing follows Tailwind's 4px unit used in 8px steps (2, 4, 6, 8, 12 …).
+ */
 @theme {
-  --font-sans: 'Inter', ui-sans-serif, system-ui, -apple-system, 'Segoe UI', Roboto, 'Noto Sans', 'Noto Sans Devanagari', sans-serif;
-  --color-brand: var(--brand, #1e40af);
+  --font-sans: var(--font-inter), ui-sans-serif, system-ui, -apple-system, 'Segoe UI', Roboto, 'Noto Sans', 'Noto Sans Devanagari', sans-serif;
+
+  /* Brand (tenant-overridable) */
+  --color-brand: var(--brand, #2563eb);
   --color-brand-fg: #ffffff;
-  --color-accent: var(--accent, #f59e0b);
-  --color-ink: #0f172a;
-  --color-muted: #64748b;
-  --color-line: #e2e8f0;
+  --color-brand-soft: color-mix(in oklab, var(--brand, #2563eb) 9%, white);
+  --color-brand-line: color-mix(in oklab, var(--brand, #2563eb) 24%, white);
+  --color-accent: var(--accent, #4f46e5);
+  --color-indigo: #4f46e5;
+
+  /* Neutrals */
+  --color-canvas: #f6f7fb;
   --color-surface: #ffffff;
-  --color-canvas: #f8fafc;
-  --color-ok: #16a34a;
-  --color-warn: #d97706;
+  --color-surface-2: #f9fafc;
+  --color-sunken: #f1f3f8;
+  --color-line: #e6e8ef;
+  --color-line-strong: #d5d9e2;
+  --color-ink: #0f172a;
+  --color-ink-2: #334155;
+  --color-muted: #64748b;
+  --color-faint: #94a3b8;
+
+  /* Status (always paired with an icon or label) */
+  --color-ok: #0d9488;
+  --color-ok-soft: #e6f6f4;
+  --color-warn: #b45309;
+  --color-warn-soft: #fdf4e3;
   --color-bad: #dc2626;
-  --radius-xl: 0.9rem;
+  --color-bad-soft: #fdecec;
+  --color-info: #2563eb;
+  --color-info-soft: #e8f0fe;
+
+  /* Charts: validated categorical order (blue, orange, aqua, yellow, magenta, green, violet, red) */
+  --color-series-1: #2a78d6;
+  --color-series-2: #eb6834;
+  --color-series-3: #1baf7a;
+  --color-series-4: #eda100;
+  --color-series-5: #e87ba4;
+  --color-series-6: #008300;
+  --color-series-7: #4a3aa7;
+  --color-series-8: #e34948;
+  --color-grid: #e9ebf1;
+  --color-axis: #c3c7d1;
+
+  --radius-sm: 6px;
+  --radius-md: 8px;
+  --radius-lg: 12px;
+  --radius-xl: 16px;
+
+  --shadow-xs: 0 1px 2px rgb(15 23 42 / 0.04);
+  --shadow-sm: 0 1px 2px rgb(15 23 42 / 0.04), 0 1px 3px rgb(15 23 42 / 0.05);
+  --shadow-md: 0 1px 2px rgb(15 23 42 / 0.04), 0 8px 24px -8px rgb(15 23 42 / 0.10);
+  --shadow-lg: 0 2px 4px rgb(15 23 42 / 0.04), 0 24px 48px -16px rgb(15 23 42 / 0.18);
+
+  --ease-out: cubic-bezier(0.2, 0.8, 0.2, 1);
+  --animate-fade-in: fade-in 160ms var(--ease-out);
+  --animate-rise: rise 200ms var(--ease-out);
+  --animate-shimmer: shimmer 1.4s linear infinite;
+
+  @keyframes fade-in { from { opacity: 0; } to { opacity: 1; } }
+  @keyframes rise { from { opacity: 0; transform: translateY(4px); } to { opacity: 1; transform: none; } }
+  @keyframes shimmer { from { background-position: -400px 0; } to { background-position: 400px 0; } }
 }
-@media (prefers-color-scheme: dark) {
-  :root:not([data-theme='light']) {
-    --color-ink: #e2e8f0;
-    --color-muted: #94a3b8;
-    --color-line: #1e293b;
-    --color-surface: #0f172a;
-    --color-canvas: #020617;
-  }
-}
+
+/* Opt-in dark theme (data-theme="dark"); the console defaults to light by design. */
 :root[data-theme='dark'] {
-  --color-ink: #e2e8f0; --color-muted: #94a3b8; --color-line: #1e293b; --color-surface: #0f172a; --color-canvas: #020617;
+  --color-canvas: #0b1020;
+  --color-surface: #111827;
+  --color-surface-2: #0f1626;
+  --color-sunken: #0b1222;
+  --color-line: #1f2937;
+  --color-line-strong: #334155;
+  --color-ink: #e5e7eb;
+  --color-ink-2: #cbd5e1;
+  --color-muted: #94a3b8;
+  --color-faint: #64748b;
+  --color-grid: #1f2937;
+  --color-axis: #334155;
+  --color-brand-soft: color-mix(in oklab, var(--brand, #2563eb) 18%, #111827);
+  --color-ok-soft: #0f2a28;
+  --color-warn-soft: #2a2010;
+  --color-bad-soft: #2c1414;
+  --color-info-soft: #13213d;
 }
+
 html { -webkit-text-size-adjust: 100%; }
-body { background: var(--color-canvas); color: var(--color-ink); font-family: var(--font-sans); }
-:focus-visible { outline: 2px solid var(--color-brand); outline-offset: 2px; }
+body { background: var(--color-canvas); color: var(--color-ink); font-family: var(--font-sans); font-feature-settings: 'cv11', 'ss01'; }
+:focus-visible { outline: 2px solid var(--color-brand); outline-offset: 2px; border-radius: 4px; }
 .tabular { font-variant-numeric: tabular-nums; }
-@media (prefers-reduced-motion: reduce) { * { animation: none !important; transition: none !important; } }
+
+/* Glass: subtle — translucent white over the canvas with a soft blur and a hairline. */
+.glass {
+  background: rgb(255 255 255 / 0.72);
+  backdrop-filter: saturate(160%) blur(14px);
+  -webkit-backdrop-filter: saturate(160%) blur(14px);
+}
+:root[data-theme='dark'] .glass { background: rgb(17 24 39 / 0.72); }
+
+/* Canvas wash: a barely-there brand tint at the top of app pages. */
+.canvas-wash {
+  background:
+    radial-gradient(1200px 400px at 10% -10%, color-mix(in oklab, var(--brand, #2563eb) 7%, transparent), transparent 70%),
+    radial-gradient(900px 300px at 100% -20%, color-mix(in oklab, #4f46e5 6%, transparent), transparent 70%),
+    var(--color-canvas);
+}
+
+.skeleton {
+  background: linear-gradient(90deg, var(--color-sunken) 0, color-mix(in oklab, var(--color-sunken) 40%, white) 40%, var(--color-sunken) 80%);
+  background-size: 800px 100%;
+  animation: var(--animate-shimmer);
+}
+
+.scrollbar-thin { scrollbar-width: thin; scrollbar-color: var(--color-line-strong) transparent; }
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after { animation-duration: 0.01ms !important; animation-iteration-count: 1 !important; transition-duration: 0.01ms !important; scroll-behavior: auto !important; }
+}

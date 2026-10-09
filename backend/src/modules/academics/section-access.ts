@@ -1,26 +1,31 @@
-import { and, eq, isNull, or } from 'drizzle-orm';
+import { and, eq, inArray } from 'drizzle-orm';
+import type { PermissionKey, ResourceRef } from '@aadhyay/contracts';
 import type { Tx } from '../../db/db.service';
-import { section, classSubject } from '../../db/schema';
+import { section, enrollment } from '../../db/schema';
 import { Ctx } from '../../kernel/context/request-context';
-import { forbidden } from '../../common/errors';
+import { notFound } from '../../common/errors';
+import { Authz, denied } from '../../kernel/authz/authz';
+import { currentSession } from './session.util';
+
+/** Staff action on a section (mark attendance, set homework …): the permission's scope must cover the section. */
+export async function assertSectionAccess(tx: Tx, sectionId: string, key: PermissionKey, extra: Omit<ResourceRef, 'sectionId'> = {}) {
+  const [sec] = await tx.select({ id: section.id }).from(section).where(eq(section.id, sectionId));
+  if (!sec) throw notFound('Section');
+  return Authz.assert(key, { sectionId, ...extra });
+}
 
 /**
- * Scope check for teacher actions on a section: allowed if the user has tenant-wide scope, an explicit
- * section/class scope covering it, or is the class teacher / a subject teacher of that section.
+ * Read access to section-level content (homework list, class diary): staff whose scope covers the section, or a
+ * parent/student whose own student is enrolled in it this session.
  */
-export async function assertSectionAccess(tx: Tx, sectionId: string) {
-  const c = Ctx.get();
-  if (c.permissions?.has('*')) return;
-  const scopes = c.scopes?.all ?? [];
-  if (scopes.some((s) => s.kind === 'tenant')) return;
-  const [sec] = await tx.select().from(section).where(eq(section.id, sectionId));
-  if (!sec) throw forbidden('Section not found');
-  if (scopes.some((s) => (s.kind === 'section' && s.id === sectionId) || (s.kind === 'class' && s.id === sec.classId))) return;
-  const staffId = c.personIds?.staff;
-  if (staffId && sec.classTeacherId === staffId) return;
-  if (staffId) {
-    const [cs] = await tx.select({ id: classSubject.id }).from(classSubject).where(and(eq(classSubject.teacherId, staffId), eq(classSubject.classId, sec.classId), or(eq(classSubject.sectionId, sectionId), isNull(classSubject.sectionId)))).limit(1);
-    if (cs) return;
+export async function assertSectionRead(tx: Tx, sectionId: string, key: PermissionKey) {
+  const d = Authz.decide(key, { sectionId });
+  if (d.allowed) return;
+  const own = Ctx.get().studentIds ?? [];
+  if (own.length && Authz.decide('self.*').allowed) {
+    const sess = await currentSession(tx);
+    const [e] = await tx.select({ id: enrollment.id }).from(enrollment).where(and(eq(enrollment.sectionId, sectionId), eq(enrollment.sessionId, sess.id), inArray(enrollment.studentId, own))).limit(1);
+    if (e) return;
   }
-  throw forbidden('You are not assigned to this section');
+  throw denied(d);
 }

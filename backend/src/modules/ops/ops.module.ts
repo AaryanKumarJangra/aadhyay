@@ -32,7 +32,7 @@ export class HostelController {
   constructor(private readonly svc: OpsService, private readonly people: PeopleService) {}
   @Can('hostel.allocation.create') @Post('allocate') allocate(@Body(Z(z.object({ roomId: z.string().uuid(), studentId: z.string().uuid(), bedNo: z.number().int().optional(), fromDate: iso }))) b: any) { return this.svc.allocate(b); }
   @Can('hostel.allocation.edit') @Post('allocations/:id/vacate') vacate(@Param('id') id: string) { return this.svc.vacate(id); }
-  @Post('outpass') async outpass(@Body(Z(z.object({ studentId: z.string().uuid(), reason: z.string().min(3), outAt: z.string().datetime(), returnBy: z.string().datetime() }))) b: any) { await this.people.assertCanSeeStudent(b.studentId); return this.svc.requestOutpass(b); }
+  @Post('outpass') async outpass(@Body(Z(z.object({ studentId: z.string().uuid(), reason: z.string().min(3), outAt: z.string().datetime(), returnBy: z.string().datetime() }))) b: any) { await this.people.assertCanSeeStudent(b.studentId, 'hostel.outpass.create'); return this.svc.requestOutpass(b); }
   @Post('outpass/:id/parent') parent(@Param('id') id: string, @Body(Z(z.object({ status: z.enum(['approved', 'rejected']) }))) b: any) { return this.svc.decideOutpass(id, 'parent', b.status); }
   @Can('hostel.outpass.approve') @Post('outpass/:id/warden') warden(@Param('id') id: string, @Body(Z(z.object({ status: z.enum(['approved', 'rejected']) }))) b: any) { return this.svc.decideOutpass(id, 'warden', b.status); }
   @Can('hostel.outpass.edit') @Post('outpass/:id/returned') returned(@Param('id') id: string) { return this.svc.outpassReturned(id); }
@@ -49,13 +49,13 @@ export class HealthController {
 export class CanteenController {
   constructor(private readonly svc: OpsService, private readonly people: PeopleService) {}
   @Can('canteen.pos.create') @Post('txn') txn(@Body(Z(z.object({ studentId: z.string().uuid(), amountPaise: z.number().int(), items: z.array(z.record(z.string(), z.unknown())).optional() }))) b: any) { return this.svc.canteen(b); }
-  @Post('limit') async limit(@Body(Z(z.object({ studentId: z.string().uuid(), dailyLimitPaise: z.number().int().positive().nullable() }))) b: any) { await this.people.assertCanSeeStudent(b.studentId); return this.svc.setDailyLimit(b.studentId, b.dailyLimitPaise); }
+  @Post('limit') async limit(@Body(Z(z.object({ studentId: z.string().uuid(), dailyLimitPaise: z.number().int().positive().nullable() }))) b: any) { await this.people.assertCanSeeStudent(b.studentId, 'canteen.pos.create'); return this.svc.setDailyLimit(b.studentId, b.dailyLimitPaise); }
 }
 
 @RequireModule('behaviour') @Controller('behaviour')
 export class BehaviourController {
   constructor(private readonly svc: OpsService, private readonly people: PeopleService) {}
-  @Get('students/:id') async summary(@Param('id') id: string) { await this.people.assertCanSeeStudent(id); return this.svc.behaviourSummary(id); }
+  @Get('students/:id') async summary(@Param('id') id: string) { await this.people.assertCanSeeStudent(id, 'behaviour.incident.view'); return this.svc.behaviourSummary(id); }
 }
 
 @RequireModule('certificates') @Controller('certificates')
@@ -90,7 +90,7 @@ const cruds = [
   crudController({ path: 'hostel/allocations', module: 'hostel', perm: 'hostel.allocation', table: hostelAllocation as any, create: z.object({}), readonly: true, filters: { roomId: hostelAllocation.roomId, studentId: hostelAllocation.studentId } }),
   crudController({ path: 'hostel/outpasses', module: 'hostel', perm: 'hostel.outpass', table: outpass as any, create: z.object({}), readonly: true, filters: { studentId: outpass.studentId } }),
   crudController({ path: 'health-records/visits', module: 'health', perm: 'health.visit', table: infirmaryVisit as any, create: z.object({}), readonly: true, filters: { studentId: infirmaryVisit.studentId } }),
-  crudController({ path: 'behaviour/incidents', module: 'behaviour', perm: 'behaviour.incident', table: incident as any, create: z.object({ title: z.string(), points: z.number().int().default(0), description: z.string().optional(), studentIds: z.array(z.string().uuid()).min(1) }), beforeWrite: (d, m) => (m === 'create' ? { ...d, reportedBy: undefined } : d) }),
+  crudController({ path: 'behaviour/incidents', module: 'behaviour', perm: 'behaviour.incident', table: incident as any, scope: { studentArray: incident.studentIds }, create: z.object({ title: z.string(), points: z.number().int().default(0), description: z.string().optional(), studentIds: z.array(z.string().uuid()).min(1) }), beforeWrite: (d, m) => (m === 'create' ? { ...d, reportedBy: undefined } : d) }),
   crudController({ path: 'certificates/templates', module: 'certificates', perm: 'certificates.template', table: certificateTemplate as any, create: z.object({ kind: z.enum(['tc', 'character', 'bonafide', 'custom', 'id_card_student', 'id_card_staff']), name: z.string(), layout: z.object({ title: z.string().optional(), body: z.string().optional(), fields: z.array(z.object({ label: z.string(), key: z.string() })).optional(), background: z.string().optional() }) }) }),
   crudController({ path: 'certificates/issued', module: 'certificates', perm: 'certificates.certificate', table: issuedCertificate as any, create: z.object({}), readonly: true, filters: { ownerId: issuedCertificate.ownerId, templateId: issuedCertificate.templateId } }),
   crudController({ path: 'alumni/records', module: 'alumni', perm: 'alumni.alumni', table: alumni as any, create: z.object({ name: z.string(), batchYear: z.number().int(), phone: z.string().optional(), email: z.string().email().optional(), occupation: z.string().optional(), city: z.string().optional() }), search: [alumni.name, alumni.city], filters: { batchYear: alumni.batchYear } }),

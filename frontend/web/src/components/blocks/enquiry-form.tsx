@@ -2,11 +2,12 @@
 import { useState } from 'react';
 
 /** Website enquiry → CRM lead (UTM captured for source attribution). */
-export function EnquiryForm({ host, formKey }: { host: string; formKey: string }) {
+export function EnquiryForm({ host, formKey, heading, disabled }: { host: string; formKey: string; heading?: string; disabled?: boolean }) {
   const [state, setState] = useState<'idle' | 'busy' | 'ok' | 'err'>('idle');
   const [msg, setMsg] = useState('');
   async function submit(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault();
+    if (disabled) return;
     setState('busy');
     const data = Object.fromEntries(new FormData(e.currentTarget));
     const utm = Object.fromEntries([...new URLSearchParams(window.location.search)].filter(([k]) => k.startsWith('utm_')));
@@ -17,8 +18,8 @@ export function EnquiryForm({ host, formKey }: { host: string; formKey: string }
   }
   if (state === 'ok') return <p className="rounded-xl bg-ok/10 p-5 text-center font-medium">{msg}</p>;
   return (
-    <form onSubmit={submit} className="space-y-3 rounded-xl border border-line bg-surface p-6 shadow-sm">
-      <h2 className="text-xl font-semibold">Admission enquiry</h2>
+    <form onSubmit={submit} className="space-y-3 rounded-2xl border border-black/[0.07] bg-white p-6 text-[#0f172a] shadow-sm">
+      <h2 className="text-xl font-semibold">{heading || 'Admission enquiry'}</h2>{disabled && <p className="text-xs text-muted">Preview — submissions are disabled in the editor.</p>}
       <input name="name" required placeholder="Student's name" className="h-11 w-full rounded-lg border border-line px-3" />
       <input name="phone" required inputMode="tel" placeholder="Parent's mobile" className="h-11 w-full rounded-lg border border-line px-3" />
       <input name="forClass" placeholder="Class seeking admission" className="h-11 w-full rounded-lg border border-line px-3" />

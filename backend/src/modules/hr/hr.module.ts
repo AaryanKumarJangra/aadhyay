@@ -7,6 +7,7 @@ import { HrService } from './hr.service';
 import { crudController } from '../../common/crud';
 import { leaveType, payrollRun } from '../../db/schema';
 import { Ctx } from '../../kernel/context/request-context';
+import { Authz } from '../../kernel/authz/authz';
 
 const salary = z.object({
   basicPaise: z.number().int().nonnegative(),
@@ -19,7 +20,12 @@ const salary = z.object({
 export class HrController {
   constructor(private readonly svc: HrService) {}
   @Can('hr.leave.manage') @Post('leave/allot') allot(@Body(Z(z.object({ year: z.number().int() }))) b: any) { return this.svc.allotYear(b.year); }
-  @Get('leave/balances/:staffId') balances(@Param('staffId') id: string, @Query('year') y?: string) { return this.svc.balances(id === 'me' ? Ctx.get().personIds?.staff ?? '' : id, Number(y ?? new Date().getFullYear())); }
+  /** Own balance for everyone; anyone else's needs HR leave access. */
+  @Get('leave/balances/:staffId') balances(@Param('staffId') id: string, @Query('year') y?: string) {
+    const me = Ctx.get().personIds?.staff ?? '';
+    if (id !== 'me' && id !== me) Authz.assert('hr.leave.view');
+    return this.svc.balances(id === 'me' ? me : id, Number(y ?? new Date().getFullYear()));
+  }
   @Can('hr.leave.approve', 'attendance.leave.approve') @Post('leave/:id/consume') consume(@Param('id') id: string) { return this.svc.consumeLeave(id); }
 }
 

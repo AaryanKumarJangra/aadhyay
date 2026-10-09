@@ -33,3 +33,20 @@ export const PLAN_MODULES: Record<string, ModuleKey[]> = {
     'messenger', 'calls', 'certificates', 'coaching', 'crm', 'reports', 'multibranch', 'ai',
   ],
 };
+
+/** Modules that only make sense with others (brief §7 step 6). Core modules are always on and not listed. */
+export const MODULE_DEPENDENCIES: Partial<Record<ModuleKey, ModuleKey[]>> = {
+  attendance: ['academics'], timetable: ['academics'], homework: ['academics'], exams: ['academics'], lessonplan: ['academics'],
+  'board-exams': ['exams'], 'online-exams': ['lms'], 'live-classes': ['calls'], payroll: ['hr'], accounts: ['fees'],
+  crm: ['front-office'], transport: ['people'], hostel: ['people'], health: ['people'], canteen: ['fees'], whatsapp: ['comms'],
+  'voice-agent': ['crm'], alumni: ['people'], cv: ['people'], multibranch: ['org'],
+};
+
+/** Modules missing for the chosen set: [{ module, needs }]. */
+export function missingDependencies(selected: Iterable<string>): { module: string; needs: string[] }[] {
+  const set = new Set<string>([...selected, ...CORE_MODULES]);
+  return [...set].flatMap((m) => {
+    const needs = (MODULE_DEPENDENCIES[m as ModuleKey] ?? []).filter((d) => !set.has(d));
+    return needs.length ? [{ module: m, needs }] : [];
+  });
+}

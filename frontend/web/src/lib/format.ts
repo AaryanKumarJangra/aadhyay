@@ -4,4 +4,4 @@ export const inrWithGst = (paise: number) => inr(Math.round(paise * 1.18));
 export const date = (d: string | Date | null | undefined) => (d ? new Date(d).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric', timeZone: 'Asia/Kolkata' }) : '—');
 export const dateTime = (d: string | Date | null | undefined) => (d ? new Date(d).toLocaleString('en-IN', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit', timeZone: 'Asia/Kolkata' }) : '—');
 export const todayIST = () => new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Kolkata' }).format(new Date());
-export const cx = (...c: (string | false | null | undefined)[]) => c.filter(Boolean).join(' ');
+export const cx = (...c: unknown[]) => c.filter((x): x is string => typeof x === 'string' && x.length > 0).join(' ');

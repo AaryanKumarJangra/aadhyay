@@ -1,7 +1,8 @@
 import { Body, Controller, Get, Param, Post, Query } from '@nestjs/common';
 import { z } from 'zod';
 import { Transport } from '@aadhyay/contracts';
-import { Can, RequireModule, Public } from '../../kernel/auth/decorators';
+import { Can, RequireModule, Public, Scoped } from '../../kernel/auth/decorators';
+import { Authz } from '../../kernel/authz/authz';
 import { Z } from '../../common/zod.pipe';
 import { TransportService } from './transport.service';
 import { crudController } from '../../common/crud';
@@ -24,28 +25,30 @@ export class TransportController {
   assign(@Body(Z(Transport.assignTransport)) b: any) {
     return this.svc.assign(b);
   }
-  @Can('transport.trip.view', 'transport.route.view') @Get('vehicles/:id/riders')
-  riders(@Param('id') id: string, @Query('direction') d: 'pickup' | 'drop' = 'pickup') {
+  @Can('transport.trip.view', 'transport.route.view') @Scoped() @Get('vehicles/:id/riders')
+  async riders(@Param('id') id: string, @Query('direction') d: 'pickup' | 'drop' = 'pickup') {
+    // Drivers see riders only for their own vehicle; transport staff for any.
+    if (Authz.filter('transport.trip.view').kind !== 'all' && Authz.filter('transport.route.view').kind !== 'all') await this.svc.assertDriver(id);
     return this.svc.riders(id, d);
   }
   // Driver app
-  @Can('transport.trip.create', 'transport.trip.manage') @Post('trips/start')
+  @Can('transport.trip.create', 'transport.trip.manage') @Scoped() @Post('trips/start')
   start(@Body(Z(Transport.startTrip)) b: any) {
     return this.svc.startTrip(b);
   }
-  @Can('transport.trip.create', 'transport.trip.manage') @Post('trips/ping')
+  @Can('transport.trip.create', 'transport.trip.manage') @Scoped() @Post('trips/ping')
   ping(@Body(Z(Transport.tripPing)) b: any) {
     return this.svc.ping(b.tripId, b.points);
   }
-  @Can('transport.trip.create', 'transport.trip.manage') @Post('trips/student-event')
+  @Can('transport.trip.create', 'transport.trip.manage') @Scoped() @Post('trips/student-event')
   studentEvent(@Body(Z(Transport.tripStudentEvent)) b: any) {
     return this.svc.studentEvent(b);
   }
-  @Can('transport.trip.create', 'transport.trip.manage') @Post('trips/sos')
+  @Can('transport.trip.create', 'transport.trip.manage') @Scoped() @Post('trips/sos')
   sos(@Body(Z(Transport.sosInput)) b: any) {
     return this.svc.sos(b);
   }
-  @Can('transport.trip.create', 'transport.trip.manage') @Post('trips/:id/end')
+  @Can('transport.trip.create', 'transport.trip.manage') @Scoped() @Post('trips/:id/end')
   end(@Param('id') id: string) {
     return this.svc.endTrip(id);
   }
@@ -58,6 +61,11 @@ export class TransportController {
     return this.svc.tripReport(id);
   }
   /** Parent app live map. */
+  /** Driver app trip setup: only the vehicles this driver/attendant is assigned to and those vehicles' routes. */
+  @Can('transport.trip.create', 'transport.trip.manage') @Scoped() @Get('my/vehicles')
+  myVehicles() {
+    return this.svc.driverSetup();
+  }
   @Get('my/buses')
   myBuses() {
     return this.svc.myBuses();

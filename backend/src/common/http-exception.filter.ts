@@ -29,7 +29,9 @@ export class AllExceptionsFilter implements ExceptionFilter {
     if (pgCode === '22P02' || pgCode === '22007' || pgCode === '22008' || pgCode === '22003') return reply.status(400).send({ error: { code: 'BAD_REQUEST', message: 'Invalid identifier or value' } });
     if (pgCode === '23503') return reply.status(422).send({ error: { code: 'VALIDATION_FAILED', message: 'Referenced record does not exist' } });
     if (pgCode === '42501') return reply.status(403).send({ error: { code: 'FORBIDDEN', message: 'Row-level security violation' } });
-    this.log.error(exception instanceof Error ? exception.stack : String(exception));
+    // Log the database cause too (Drizzle wraps it): the client still gets a generic 500.
+    const cause = (exception as any)?.cause;
+    this.log.error([exception instanceof Error ? exception.stack : String(exception), cause ? `cause: ${cause.code ?? ''} ${cause.message ?? cause}` : ''].filter(Boolean).join('\n'));
     return reply.status(500).send({ error: { code: 'INTERNAL', message: 'Something went wrong' } });
   }
 }

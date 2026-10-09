@@ -55,7 +55,7 @@ export async function startRealtime(app: INestApplicationContext, port = env.REA
     if (a.tenantId && a.userId) {
       const t = await tenants.byIdOrSlug(a.tenantId);
       const acc = await access.load(a.tenantId, a.userId);
-      Object.assign(ctx, { tenantId: a.tenantId, tenantTz: t?.timezone, tenantSlug: t?.slug, permissions: new Set(acc?.permissions ?? []), personIds: acc?.personIds ?? {}, kinds: acc?.kinds ?? [], scopes: { all: acc?.scopes ?? [] } });
+      Object.assign(ctx, { tenantId: a.tenantId, tenantTz: t?.timezone, tenantSlug: t?.slug, permissions: new Set(acc?.permissions ?? []), personIds: acc?.personIds ?? {}, kinds: acc?.kinds ?? [], grants: acc?.grants ?? [], roles: acc?.roles ?? [], studentIds: acc?.studentIds ?? [], modules: t ? [...(await tenants.enabledModules(t.id))] : undefined });
     }
     return ctx;
   }

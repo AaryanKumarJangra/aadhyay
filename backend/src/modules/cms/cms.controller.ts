@@ -1,4 +1,5 @@
-import { Body, Controller, Get, Param, Patch, Post, Put, Query, Req } from '@nestjs/common';
+import { Body, Controller, Delete, Get, Param, Patch, Post, Put, Query, Req } from '@nestjs/common';
+import { Authz } from '../../kernel/authz/authz';
 import type { FastifyRequest } from 'fastify';
 import { z } from 'zod';
 import { eq } from 'drizzle-orm';
@@ -16,9 +17,29 @@ import { RedisService } from '../../kernel/redis/redis.service';
 @Controller('cms')
 export class CmsController {
   constructor(private readonly svc: CmsService, private readonly db: DbService, private readonly redis: RedisService) {}
-  @Can('cms.page.create') @Post('pages') create(@Body(Z(Cms.pageInput)) b: any) { return this.svc.savePage(b); }
-  @Can('cms.page.edit') @Put('pages/:id') update(@Param('id') id: string, @Body(Z(Cms.pageUpdate)) b: any) { return this.svc.savePage(b, id); }
-  @Can('cms.page.edit') @Post('pages/:id/rollback') rollback(@Param('id') id: string, @Body(Z(z.object({ version: z.number().int() }))) b: any) { return this.svc.rollback(id, b.version); }
+  @Can('cms.page.create') @Post('pages') create(@Body(Z(Cms.pageInput)) b: any) { if (b.status !== 'draft') Authz.assert('cms.page.publish'); return this.svc.savePage(b); }
+  /** Direct save. Changing what is live (publishing, or editing a published page) needs the publish permission. */
+  @Can('cms.page.edit') @Put('pages/:id')
+  async update(@Param('id') id: string, @Body(Z(Cms.pageUpdate)) b: any) {
+    const [cur] = await this.db.t((tx) => tx.select({ status: sitePage.status }).from(sitePage).where(eq(sitePage.id, id)));
+    if (b.status === 'published' || b.status === 'scheduled' || cur?.status === 'published' || cur?.status === 'scheduled') Authz.assert('cms.page.publish');
+    return this.svc.savePage(b, id);
+  }
+  @Can('cms.page.publish') @Post('pages/:id/rollback') rollback(@Param('id') id: string, @Body(Z(z.object({ version: z.number().int() }))) b: any) { return this.svc.rollback(id, b.version); }
+
+  // Builder workflow: draft → review → publish
+  @Can('cms.page.view') @Get('pages/:id/editor') editor(@Param('id') id: string) { return this.svc.editorPage(id); }
+  @Can('cms.page.edit') @Put('pages/:id/draft') draft(@Param('id') id: string, @Body(Z(Cms.pageDraft)) b: any) { return this.svc.saveDraft(id, b); }
+  @Can('cms.page.edit') @Delete('pages/:id/draft') discard(@Param('id') id: string) { return this.svc.discardDraft(id); }
+  @Can('cms.page.edit') @Post('pages/:id/submit') submit(@Param('id') id: string, @Body(Z(z.object({ note: z.string().max(500).optional() }))) b: any) { return this.svc.submitForReview(id, b.note); }
+  @Can('cms.page.publish') @Post('pages/:id/request-changes') changes(@Param('id') id: string, @Body(Z(z.object({ note: z.string().trim().min(3).max(500) }))) b: any) { return this.svc.requestChanges(id, b.note); }
+  @Can('cms.page.publish') @Post('pages/:id/publish') publish(@Param('id') id: string, @Body(Z(z.object({ publishAt: z.string().datetime().optional() }))) b: any) { return this.svc.publishDraft(id, b.publishAt); }
+  @Can('cms.page.edit') @Post('pages/:id/restore') restore(@Param('id') id: string, @Body(Z(z.object({ version: z.number().int() }))) b: any) { return this.svc.restoreToDraft(id, b.version); }
+
+  // Media library
+  @Can('cms.page.view') @Get('media') media(@Query('q') q?: string) { return this.svc.media(q); }
+  @Can('cms.page.edit') @Patch('media/:id') mediaMeta(@Param('id') id: string, @Body(Z(Cms.mediaMeta)) b: any) { return this.svc.updateMedia(id, b); }
+  @Can('cms.page.delete') @Delete('media/:id') mediaDelete(@Param('id') id: string) { return this.svc.deleteMedia(id); }
   @Can('cms.menu.edit', 'cms.page.edit') @Put('menus')
   async menu(@Body(Z(Cms.menuInput)) b: any) {
     const [r] = await this.db.t((tx) => tx.insert(siteMenu).values({ tenantId: Ctx.tenantId(), key: b.key, items: b.items }).onConflictDoUpdate({ target: [siteMenu.tenantId, siteMenu.key], set: { items: b.items } }).returning());

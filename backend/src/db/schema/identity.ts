@@ -71,6 +71,10 @@ export const role = pgTable(
     description: text('description'),
     isSystem: boolean('is_system').default(false).notNull(),
     permissions: text('permissions').array().notNull(),  // module.resource.action, supports wildcards like fees.* or *
+    scopes: jsonb('scopes').$type<Record<string, 'tenant' | 'section' | 'subject' | 'own'>>().default({}).notNull(),  // permission → scope (missing = tenant)
+    conditions: jsonb('conditions').$type<Record<string, { maxAmountPaise?: number; sameDayOnly?: boolean; makerChecker?: boolean }>>().default({}).notNull(),
+    templateVersion: integer('template_version').default(0).notNull(),  // system roles: ROLE_TEMPLATES version they were built from
+    isCustomized: boolean('is_customized').default(false).notNull(),  // edited by the institution → never auto-upgraded
     createdAt: timestamp('created_at', { withTimezone: true, mode: 'date' }).defaultNow().notNull(),
     updatedAt: timestamp('updated_at', { withTimezone: true, mode: 'date' }).defaultNow().$onUpdate(() => new Date()).notNull(),
   },
@@ -169,6 +173,7 @@ export const file = pgTable(
     ownerUserId: uuid('owner_user_id'),
     purpose: text('purpose').notNull(),  // student_photo | document | receipt | cms_media | homework | messenger_media ...
     isPublic: boolean('is_public').default(false).notNull(),
+    meta: jsonb('meta').$type<{ name?: string; alt?: string; caption?: string; folder?: string; width?: number; height?: number }>().default({}).notNull(),
     createdAt: timestamp('created_at', { withTimezone: true, mode: 'date' }).defaultNow().notNull(),
   },
   (t) => [

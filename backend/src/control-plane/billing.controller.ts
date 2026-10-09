@@ -17,7 +17,7 @@ import { AppError } from '../common/errors';
 export class BillingController {
   constructor(private readonly db: DbService, private readonly billing: BillingService, private readonly payments: PaymentsAdapter) {}
 
-  @AllowSuspended() @Can('org.billing.view', 'org.*') @Get('summary')
+  @AllowSuspended() @Can('org.billing.view') @Get('summary')
   async summary() {
     const tid = Ctx.tenantId();
     const [t] = await this.db.admin.select().from(tenant).where(eq(tenant.id, tid));
@@ -30,13 +30,13 @@ export class BillingController {
     };
   }
 
-  @AllowSuspended() @Can('org.billing.view', 'org.*') @Post('quote')
+  @AllowSuspended() @Can('org.billing.view') @Post('quote')
   quote(@Body(Z(Billing.tenantQuoteInput)) b: any) {
     return this.billing.tenantQuote(Ctx.tenantId(), b);
   }
 
   /** Accept a quote → tax invoice → payment order. */
-  @AllowSuspended() @Can('org.billing.manage', 'org.*') @Post('checkout')
+  @AllowSuspended() @Can('org.billing.manage') @Post('checkout')
   async checkout(@Body(Z(Billing.tenantQuoteInput)) b: any) {
     const tid = Ctx.tenantId();
     const q = await this.billing.tenantQuote(tid, b);
@@ -44,19 +44,19 @@ export class BillingController {
     return { invoice: inv, payment: await this.billing.payInvoice(tid, inv.id) };
   }
 
-  @AllowSuspended() @Can('org.billing.view', 'org.*') @Get('invoices/:id')
+  @AllowSuspended() @Can('org.billing.view') @Get('invoices/:id')
   async invoiceDetail(@Param('id') id: string) {
     const [inv] = await this.db.admin.select().from(invoice).where(eq(invoice.id, id));
     if (!inv || inv.tenantId !== Ctx.tenantId()) throw new AppError('NOT_FOUND', 'Invoice not found');
     return { ...inv, lines: await this.db.admin.select().from(invoiceLine).where(eq(invoiceLine.invoiceId, id)) };
   }
 
-  @AllowSuspended() @Can('org.billing.manage', 'org.*') @Post('invoices/:id/pay')
+  @AllowSuspended() @Can('org.billing.manage') @Post('invoices/:id/pay')
   pay(@Param('id') id: string) {
     return this.billing.payInvoice(Ctx.tenantId(), id);
   }
 
-  @AllowSuspended() @Can('org.billing.manage', 'org.*') @Post('wallet/topup')
+  @AllowSuspended() @Can('org.billing.manage') @Post('wallet/topup')
   topup(@Body(Z(Billing.walletTopup)) b: { amountPaise: number }) {
     return this.billing.topupOrder(Ctx.tenantId(), b.amountPaise);
   }

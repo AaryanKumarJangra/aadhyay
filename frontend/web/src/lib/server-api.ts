@@ -24,7 +24,9 @@ export async function api<T = any>(path: string, init: RequestInit & { tenant?: 
   const res = await fetch(`${API_URL}/v1${path}`, { ...init, headers, next: init.revalidate !== undefined || init.tags ? { revalidate: init.revalidate, tags: init.tags } : undefined, cache: init.revalidate === undefined && !init.tags ? 'no-store' : undefined });
   const text = await res.text();
   const body = text ? JSON.parse(text) : null;
-  if (res.status === 403 && body?.error?.code === 'FORBIDDEN' && init.onForbidden !== 'throw') forbidden();
+  if (res.status === 403 && ['FORBIDDEN', 'MODULE_DISABLED'].includes(body?.error?.code) && init.onForbidden !== 'throw') {
+    forbidden();
+  }
   if (!res.ok) throw new ApiError(res.status, body?.error?.code ?? 'ERROR', body?.error?.message ?? res.statusText, body?.error?.details);
   return body as T;
 }

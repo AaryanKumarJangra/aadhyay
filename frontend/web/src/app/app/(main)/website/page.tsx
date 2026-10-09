@@ -1,7 +1,20 @@
+import { ExternalLink, Image as ImageIcon } from 'lucide-react';
 import { api } from '@/lib/server-api';
-import { PageHeader } from '@/components/ui';
-import { PageEditor } from './editor';
+import { guard, canDo, getOrg } from '@/lib/me';
+import { LinkButton, PageHeader } from '@/components/ui';
+import { PagesTable, type PageRow } from '@/components/cms/pages-table';
+
+export const metadata = { title: 'Website' };
 export default async function Website() {
-  const [pages, domains, org] = await Promise.all([api('/cms/page-list?limit=200'), api('/cms/domains'), api('/org/profile')]);
-  return <><PageHeader title="Website" sub={<>Live at {domains.map((d: any) => <a key={d.id} href={`https://${d.host}`} target="_blank" className="mr-2 text-brand underline">{d.host}</a>)}</>} /><PageEditor pages={pages.items} slug={org.slug} /></>;
+  const { me, denied } = await guard('cms.page.view', 'cms.page.edit');
+  if (denied) return denied;
+  const [org, pages] = await Promise.all([getOrg(), api<{ items: PageRow[] }>('/cms/page-list?limit=200')]);
+  const siteBase = `/site/${org.slug}`;
+  return (
+    <>
+      <PageHeader title="Website" breadcrumb={[{ label: 'Engage' }, { label: 'Website' }]} description="Build pages visually. Edits are saved as drafts and go live only when published."
+        actions={<><LinkButton variant="secondary" href="/app/website/media" icon={<ImageIcon />}>Media library</LinkButton><LinkButton variant="secondary" href={siteBase} target="_blank" icon={<ExternalLink />}>View site</LinkButton></>} />
+      <PagesTable rows={pages.items} canCreate={canDo(me, 'cms.page.create')} siteBase={siteBase} />
+    </>
+  );
 }

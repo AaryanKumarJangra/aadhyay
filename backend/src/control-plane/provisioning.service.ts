@@ -1,6 +1,6 @@
 import { Injectable } from '@nestjs/common';
 import { eq, sql } from 'drizzle-orm';
-import { PLAN_MODULES, ROLE_TEMPLATES, DEFAULT_ROUTING, type ModuleKey } from '@aadhyay/contracts';
+import { PLAN_MODULES, ROLE_TEMPLATES, TEMPLATE_VERSION, DEFAULT_ROUTING, materialise, type ModuleKey } from '@aadhyay/contracts';
 import { DbService } from '../db/db.service';
 import { tenant, tenantDomain, tenantModule, wallet, walletTxn, role, membership, roleAssignment, academicSession, commRoutingRule, pipeline, pipelineStage, ledgerAccount, gradeScale, siteMenu, sitePage, siteForm, branch } from '../db/schema';
 import { AuthService } from '../kernel/auth/auth.service';
@@ -69,7 +69,7 @@ export class ProvisioningService {
       await tx.insert(tenantModule).values([...modules].map((m) => ({ tenantId: tid, moduleKey: m, enabled: true, source: 'trial' })));
       const [w] = await tx.insert(wallet).values({ tenantId: tid, balancePaise: TRIAL_WALLET_CREDIT_PAISE }).returning();
       await tx.insert(walletTxn).values({ walletId: w!.id, tenantId: tid, kind: 'credit', amountPaise: TRIAL_WALLET_CREDIT_PAISE, balanceAfter: TRIAL_WALLET_CREDIT_PAISE, ref: 'Trial starter credit' });
-      const roles = await tx.insert(role).values(Object.entries(ROLE_TEMPLATES).map(([key, r]) => ({ tenantId: tid, key, name: r.name, permissions: r.permissions, isSystem: true }))).returning();
+      const roles = await tx.insert(role).values(Object.entries(ROLE_TEMPLATES).map(([key, r]) => ({ tenantId: tid, key, name: r.name, description: r.description, ...materialise(r), isSystem: true, templateVersion: TEMPLATE_VERSION }))).returning();
       const [m] = await tx.insert(membership).values({ tenantId: tid, userId: owner.id, kind: 'staff' }).returning();
       await tx.insert(roleAssignment).values({ tenantId: tid, membershipId: m!.id, roleId: roles.find((r) => r.key === 'owner')!.id });
       const s = currentSessionName();

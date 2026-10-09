@@ -27,6 +27,14 @@ describe('transport: multi-child bus links, live tracking, geofence, SOS', () =>
       expect(x.status).toBe(201);
     }
     const driver = await api.login(driverPhone, 'Raju', s.slug);
+    // Driver app setup: only the assigned vehicle and its route; riders for it; nothing tenant-wide.
+    const setup = await api.req('GET', '/transport/my/vehicles', { token: driver.token });
+    expect(setup.status, JSON.stringify(setup.body)).toBe(200);
+    expect(setup.body.vehicles.map((v: any) => v.id)).toEqual([v1.body.id]);
+    expect(setup.body.routes.map((r: any) => r.id)).toEqual([r1.body.id]);
+    expect((await api.req('GET', `/transport/vehicles/${v1.body.id}/riders?direction=pickup`, { token: driver.token })).body).toHaveLength(2);
+    expect((await api.req('GET', `/transport/vehicles/${v2.body.id}/riders?direction=pickup`, { token: driver.token })).status).toBe(403);
+    expect((await api.req('GET', '/transport/vehicles', { token: driver.token })).status).toBe(403);
     // Driver cannot start bus 2 (not assigned)
     const nope = await api.req('POST', '/transport/trips/start', { token: driver.token, body: { vehicleId: v2.body.id, routeId: r2.body.id, direction: 'pickup' } });
     expect(nope.status).toBe(403);

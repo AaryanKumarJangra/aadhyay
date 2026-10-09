@@ -1,11 +1,13 @@
 import { Injectable } from '@nestjs/common';
-import { and, asc, between, eq, gte, inArray, lte, sql } from 'drizzle-orm';
+import { and, asc, between, eq, gte, inArray, lte, or, sql } from 'drizzle-orm';
 import { DbService } from '../../db/db.service';
 import { attendanceRecord, enrollment, student, staff, leaveRequest, calendarEvent, section } from '../../db/schema';
 import { Ctx } from '../../kernel/context/request-context';
 import { EventsService } from '../../kernel/events/events.service';
 import { currentSession } from '../academics/session.util';
 import { assertSectionAccess } from '../academics/section-access';
+import { Authz } from '../../kernel/authz/authz';
+import { studentRef, currentSectionOf } from '../../kernel/authz/refs';
 import { ZERO_UUID } from '../../common/ids';
 import { badRequest, notFound, forbidden } from '../../common/errors';
 import { todayIn, addDays } from '../../common/dates';
@@ -27,8 +29,13 @@ export class AttendanceService {
     if (b.date > todayIn(Ctx.get().tenantTz)) throw badRequest('Cannot mark attendance for a future date');
     const hol = await this.isHoliday(b.date);
     if (hol && !force) throw badRequest(`${b.date} is a holiday (${hol.title}). Pass force=true to mark anyway.`);
+    const today = todayIn(Ctx.get().tenantTz);
     const result = await this.db.t(async (tx) => {
-      await assertSectionAccess(tx, b.sectionId);
+      const [already] = await tx.select({ id: attendanceRecord.id }).from(attendanceRecord)
+        .where(and(eq(attendanceRecord.subjectType, 'student'), eq(attendanceRecord.sectionId, b.sectionId), eq(attendanceRecord.date, b.date), eq(attendanceRecord.periodId, b.periodId ?? ZERO_UUID))).limit(1);
+      // A fresh register for today is "marking"; changing marks or back-dating is "editing" (teachers: same day only).
+      if (already || b.date !== today) await assertSectionAccess(tx, b.sectionId, 'attendance.student.edit', { date: b.date, today });
+      else await assertSectionAccess(tx, b.sectionId, 'attendance.student.create');
       const sess = await currentSession(tx);
       const roster = await tx.select({ studentId: enrollment.studentId }).from(enrollment).where(and(eq(enrollment.sectionId, b.sectionId), eq(enrollment.sessionId, sess.id), eq(enrollment.status, 'active')));
       const approvedLeave = await tx.select({ subjectId: leaveRequest.subjectId }).from(leaveRequest)
@@ -69,6 +76,7 @@ export class AttendanceService {
 
   async register(sectionId: string, date: string, periodId?: string) {
     return this.db.t(async (tx) => {
+      await assertSectionAccess(tx, sectionId, 'attendance.student.view');
       const sess = await currentSession(tx);
       const rows = await tx.select({ studentId: student.id, name: student.name, admissionNo: student.admissionNo, rollNo: enrollment.rollNo, photoFileId: student.photoFileId, status: attendanceRecord.status, mode: attendanceRecord.mode, inAt: attendanceRecord.inAt, remarks: attendanceRecord.remarks })
         .from(enrollment).innerJoin(student, eq(student.id, enrollment.studentId))
@@ -84,6 +92,7 @@ export class AttendanceService {
     const from = `${month}-01`;
     const to = addDays(addDays(from, 32).slice(0, 8) + '01', -1);
     return this.db.t(async (tx) => {
+      await assertSectionAccess(tx, sectionId, 'attendance.student.view');
       const sess = await currentSession(tx);
       const studs = await tx.select({ id: student.id, name: student.name, rollNo: enrollment.rollNo }).from(enrollment).innerJoin(student, eq(student.id, enrollment.studentId)).where(and(eq(enrollment.sectionId, sectionId), eq(enrollment.sessionId, sess.id)));
       const recs = await tx.select({ subjectId: attendanceRecord.subjectId, date: attendanceRecord.date, status: attendanceRecord.status }).from(attendanceRecord)
@@ -119,8 +128,8 @@ export class AttendanceService {
     const mode = device.kind === 'rfid' ? 'rfid' : device.kind === 'face' ? 'face' : device.kind === 'biometric' ? 'biometric' : 'qr';
     return this.db.t(async (tx) => {
       const codes = [...new Set(punches.map((p) => p.code))];
-      const studs = await tx.select({ id: student.id, qr: student.qrCode, rfid: student.rfidUid }).from(student).where(sql`${student.qrCode} = any(${codes}) or ${student.rfidUid} = any(${codes})`);
-      const staffs = await tx.select({ id: staff.id, rfid: staff.rfidUid }).from(staff).where(sql`${staff.rfidUid} = any(${codes})`);
+      const studs = await tx.select({ id: student.id, qr: student.qrCode, rfid: student.rfidUid }).from(student).where(sql`${student.qrCode} = any(${sql.param(codes)}::text[]) or ${student.rfidUid} = any(${sql.param(codes)}::text[])`);
+      const staffs = await tx.select({ id: staff.id, rfid: staff.rfidUid }).from(staff).where(sql`${staff.rfidUid} = any(${sql.param(codes)}::text[])`);
       const sess = await currentSession(tx);
       let accepted = 0;
       const unknown: string[] = [];
@@ -163,6 +172,27 @@ export class AttendanceService {
     });
   }
 
+  /** Sections the user may view or mark, with today's register status (attendance home). */
+  async mySections(date: string) {
+    const view = Authz.filter('attendance.student.view');
+    const mark = Authz.filter('attendance.student.create');
+    const ids = (f: typeof view) => (f.kind === 'all' ? null : f.kind === 'some' ? [...new Set([...f.sectionIds, ...f.subjectSections.map((x) => x.sectionId)])] : []);
+    const viewIds = ids(view), markIds = ids(mark);
+    if (viewIds !== null && !viewIds.length && markIds !== null && !markIds.length) return [];
+    const scope = viewIds === null || markIds === null ? sql`` : sql`and s.id = any(${sql.param([...new Set([...viewIds, ...markIds])])}::uuid[])`;
+    const rows = await this.db.t((tx) => tx.execute(sql`
+      select s.id, c.name as class_name, s.name as section_name, c."order",
+        (select count(*) from enrollments e join academic_sessions ss on ss.id = e.session_id and ss.is_current where e.section_id = s.id and e.status = 'active')::int as strength,
+        (select count(*) from attendance_records a where a.section_id = s.id and a.subject_type = 'student' and a.period_id = ${ZERO_UUID}::uuid and a.date = ${date})::int as marked,
+        (select count(*) from attendance_records a where a.section_id = s.id and a.subject_type = 'student' and a.period_id = ${ZERO_UUID}::uuid and a.date = ${date} and a.status in ('present','late','half_day'))::int as present,
+        (select count(*) from attendance_records a where a.section_id = s.id and a.subject_type = 'student' and a.period_id = ${ZERO_UUID}::uuid and a.date = ${date} and a.status = 'absent')::int as absent
+      from sections s join classes c on c.id = s.class_id where true ${scope} order by c."order", s.name`));
+    return (rows.rows as any[]).map((r) => ({
+      id: r.id, name: `${r.class_name}-${r.section_name}`, strength: r.strength, marked: r.marked > 0, present: r.present, absent: r.absent,
+      canMark: markIds === null || markIds.includes(r.id),
+    }));
+  }
+
   // ---------------- Leave ----------------
   async applyLeave(b: { studentId?: string; staffId?: string; fromDate: string; toDate: string; reason: string; leaveTypeId?: string }) {
     const c = Ctx.get();
@@ -177,6 +207,9 @@ export class AttendanceService {
 
   async decideLeave(id: string, status: 'approved' | 'rejected') {
     return this.db.t(async (tx) => {
+      const [cur] = await tx.select().from(leaveRequest).where(eq(leaveRequest.id, id));
+      if (!cur) throw notFound('Pending leave');
+      Authz.assert('attendance.leave.approve', cur.subjectType === 'student' ? await studentRef(tx, cur.subjectId) : { staffId: cur.subjectId });
       const [r] = await tx.update(leaveRequest).set({ status, decidedBy: Ctx.userId(), decidedAt: new Date() }).where(and(eq(leaveRequest.id, id), eq(leaveRequest.status, 'pending'))).returning();
       if (!r) throw notFound('Pending leave');
       if (status === 'approved') {
@@ -190,7 +223,18 @@ export class AttendanceService {
     });
   }
 
+  /** Leave requests the user may see: institution-wide, students of covered sections, and their own applications. */
   async leaves(status?: string) {
-    return this.db.t((tx) => tx.select().from(leaveRequest).where(status ? eq(leaveRequest.status, status as any) : undefined).orderBy(sql`${leaveRequest.id} desc`).limit(200));
+    const c = Ctx.get();
+    const view = Authz.where('attendance.leave.view', { section: sql`case when ${leaveRequest.subjectType} = 'student' then ${currentSectionOf(leaveRequest.subjectId)} end`, student: leaveRequest.subjectId });
+    const approve = Authz.where('attendance.leave.approve', { section: sql`case when ${leaveRequest.subjectType} = 'student' then ${currentSectionOf(leaveRequest.subjectId)} end` });
+    const scope = view === undefined || approve === undefined ? undefined : or(view, approve, eq(leaveRequest.appliedBy, c.userId!));
+    return this.db.t((tx) => tx.select({
+      id: leaveRequest.id, subjectType: leaveRequest.subjectType, subjectId: leaveRequest.subjectId, fromDate: leaveRequest.fromDate, toDate: leaveRequest.toDate,
+      reason: leaveRequest.reason, status: leaveRequest.status, decidedAt: leaveRequest.decidedAt, createdAt: leaveRequest.createdAt,
+      subjectName: sql<string>`coalesce((select name from students where id = ${leaveRequest.subjectId}), (select name from staff where id = ${leaveRequest.subjectId}))`,
+      className: sql<string | null>`case when ${leaveRequest.subjectType} = 'student' then (select c.name || '-' || se.name from sections se join classes c on c.id = se.class_id where se.id = ${currentSectionOf(leaveRequest.subjectId)}) end`,
+      appliedByName: sql<string | null>`(select name from users where id::text = ${leaveRequest.appliedBy}::text)`,
+    }).from(leaveRequest).where(and(status ? eq(leaveRequest.status, status as any) : undefined, scope)).orderBy(sql`${leaveRequest.id} desc`).limit(200));
   }
 }

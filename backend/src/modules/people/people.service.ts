@@ -6,9 +6,12 @@ import { Ctx } from '../../kernel/context/request-context';
 import { EventsService } from '../../kernel/events/events.service';
 import { MembersService } from '../org/members.service';
 import { nextNumber } from '../../common/numbering';
+import { ZERO_UUID } from '../../common/ids';
 import { currentSession } from '../academics/session.util';
 import { badRequest, notFound } from '../../common/errors';
-import { phoneIN } from '@aadhyay/contracts';
+import { phoneIN, type PermissionKey } from '@aadhyay/contracts';
+import { Authz } from '../../kernel/authz/authz';
+import { studentRef } from '../../kernel/authz/refs';
 
 type GuardianIn = { name: string; phone: string; email?: string; relation: string; occupation?: string; isPrimary: boolean; receivesNotifications: boolean };
 
@@ -70,6 +73,7 @@ export class PeopleService {
         .leftJoin(schoolClass, eq(schoolClass.id, enrollment.classId))
         .where(and(
           isNull(student.deletedAt),
+          Authz.where('people.student.view', { section: enrollment.sectionId, student: student.id }),
           q.status ? eq(student.status, q.status as any) : eq(student.status, 'active'),
           q.sectionId ? eq(enrollment.sectionId, q.sectionId) : undefined,
           q.classId ? eq(enrollment.classId, q.classId) : undefined,
@@ -111,7 +115,25 @@ export class PeopleService {
         attendance: { days: att?.total ?? 0, present: att?.present ?? 0, pct: att?.total ? Math.round((att.present / att.total) * 1000) / 10 : null },
         transport,
       };
-    });
+    }).then((s) => this.redact(s));
+  }
+
+  /**
+   * Field-level visibility: sensitive identity fields, phone numbers and fee totals each need their own permission
+   * (a family always sees its own child's record in full).
+   */
+  private async redact<S extends Record<string, any>>(s: S): Promise<S> {
+    const ref = await this.db.t((tx) => studentRef(tx, s.id));
+    const own = Authz.decide('self.*', ref).allowed;
+    const may = (k: PermissionKey) => own || Authz.decide(k, ref).allowed;
+    const out: Record<string, any> = { ...s, visibility: { sensitive: may('people.sensitive.view'), contact: may('people.contact.view'), fees: may('fees.payment.view') } };
+    if (!out.visibility.sensitive) for (const f of ['religion', 'category', 'apaarId', 'address', 'rte', 'qrCode', 'rfidUid', 'custom', 'leftReason']) out[f] = null;
+    if (!out.visibility.contact) {
+      out.phone = null; out.email = null;
+      out.guardians = (s.guardians ?? []).map((g: any) => ({ ...g, phone: null, email: null }));
+    }
+    if (!out.visibility.fees) out.fees = null;
+    return out as S;
   }
 
   async updateStudent(id: string, input: any) {
@@ -198,11 +220,42 @@ export class PeopleService {
     });
   }
 
-  /** Throws unless the current user may see this student (staff with people.student.view, or own child). */
-  async assertCanSeeStudent(studentId: string) {
-    const c = Ctx.get();
-    if ([...(c.permissions ?? [])].some((p) => p === '*' || p.startsWith('people.') || p === 'people.student.view')) return;
-    const kids = await this.myChildren();
-    if (!kids.some((k) => k.id === studentId)) throw notFound('Student');
+  /**
+   * Throws a structured 403 unless the user may act on this student under `key` (staff, within scope) or the student is
+   * their own / their child (family portal).
+   */
+  async assertCanSeeStudent(studentId: string, key: PermissionKey = 'people.student.view') {
+    const ref = await this.db.t((tx) => studentRef(tx, studentId));
+    return Authz.assertAny([key, 'self.*'], ref);
+  }
+
+  /**
+   * Student 360 timeline: one chronological feed across modules. Each source is included only when the viewer may see
+   * it for this student (staff permission in scope, or own child).
+   */
+  async timeline(studentId: string, limit = 60) {
+    const ref = await this.db.t((tx) => studentRef(tx, studentId));
+    const own = Authz.decide('self.*', ref).allowed;
+    const may = (k: PermissionKey) => own || Authz.decide(k, ref).allowed;
+    return this.db.t(async (tx) => {
+      const q = (x: ReturnType<typeof sql>) => tx.execute(x).then((r) => r.rows as { at: string; kind: string; title: string; detail: string | null; tone: string }[]);
+      const parts: Promise<any[]>[] = [
+        q(sql`select coalesce(admitted_on::timestamptz, created_at) as at, 'admission' as kind, 'Admitted' as title, 'Admission no. ' || admission_no as detail, 'info' as tone from students where id = ${studentId}`),
+      ];
+      if (may('attendance.student.view')) parts.push(q(sql`select (date::timestamp + interval '9 hours') as at, 'attendance' as kind,
+        case status when 'absent' then 'Absent' when 'late' then 'Late' when 'leave' then 'On leave' else 'Half day' end as title, remarks as detail,
+        case status when 'absent' then 'bad' when 'leave' then 'info' else 'warn' end as tone
+        from attendance_records where subject_type = 'student' and subject_id = ${studentId} and period_id = ${ZERO_UUID}::uuid and status in ('absent','late','leave','half_day') order by date desc limit 30`));
+      if (may('fees.payment.view')) parts.push(q(sql`select collected_at as at, 'fees' as kind, 'Fee paid · ₹' || to_char(total_paise / 100.0, 'FM99,99,99,990') as title, number || ' · ' || mode::text as detail, 'ok' as tone
+        from receipts where student_id = ${studentId} and cancelled_at is null order by collected_at desc limit 20`));
+      if (may('exams.result.view')) parts.push(q(sql`select r.published_at as at, 'exam' as kind, x.name || ' result' as title, r.percentage || '% · Grade ' || coalesce(r.grade, '—') || coalesce(' · Rank ' || r.rank, '') as detail, case when r.is_pass then 'ok' else 'bad' end as tone
+        from results r join exams x on x.id = r.exam_id where r.student_id = ${studentId} and r.published_at is not null order by r.published_at desc limit 10`));
+      if (may('behaviour.incident.view')) parts.push(q(sql`select at, 'behaviour' as kind, title, description as detail, case when points < 0 then 'bad' else 'ok' end as tone
+        from incidents where ${studentId} = any(student_ids) order by at desc limit 20`));
+      if (may('attendance.leave.view') || own) parts.push(q(sql`select created_at as at, 'leave' as kind, 'Leave ' || status::text || ' · ' || to_char(from_date, 'DD Mon') || ' – ' || to_char(to_date, 'DD Mon') as title, reason as detail, 'info' as tone
+        from leave_requests where subject_type = 'student' and subject_id = ${studentId} order by created_at desc limit 10`));
+      const all = (await Promise.all(parts)).flat().filter((e) => e.at);
+      return all.sort((a, b) => new Date(b.at).getTime() - new Date(a.at).getTime()).slice(0, limit);
+    });
   }
 }

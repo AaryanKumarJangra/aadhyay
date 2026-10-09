@@ -2,7 +2,8 @@ import { Controller, Get, Injectable, Module, Query, Res } from '@nestjs/common'
 import type { FastifyReply } from 'fastify';
 import { sql } from 'drizzle-orm';
 import { DbService } from '../../db/db.service';
-import { Can, RequireModule } from '../../kernel/auth/decorators';
+import { Can, RequireModule, Scoped } from '../../kernel/auth/decorators';
+import { Authz } from '../../kernel/authz/authz';
 import { Ctx } from '../../kernel/context/request-context';
 import { todayIn } from '../../common/dates';
 import { ZERO_UUID } from '../../common/ids';
@@ -33,11 +34,12 @@ export class ReportsService {
     };
   }
   /** Class-wise attendance % for a date range. */
-  async attendanceByClass(from: string, to: string) {
+  async attendanceByClass(from: string, to: string, sectionIds: string[] | null) {
     const r = await this.db.t((tx) => tx.execute(sql`select c.name as class_name, s.name as section_name, count(*)::int as marked,
       count(*) filter (where a.status in ('present','late','half_day'))::int as present
       from attendance_records a join sections s on s.id = a.section_id join classes c on c.id = s.class_id
       where a.subject_type = 'student' and a.period_id = ${ZERO_UUID}::uuid and a.date between ${from} and ${to}
+      ${sectionIds ? sql`and a.section_id = any(${sql.param(sectionIds)}::uuid[])` : sql``}
       group by c.name, s.name, c."order" order by c."order", s.name`));
     return (r.rows as any[]).map((x) => ({ ...x, pct: x.marked ? Math.round((x.present / x.marked) * 1000) / 10 : null }));
   }
@@ -69,10 +71,16 @@ export class ReportsService {
 @RequireModule('reports') @Controller('reports')
 export class ReportsController {
   constructor(private readonly svc: ReportsService) {}
-  @Can('reports.dashboard.view', 'reports.*.view') @Get('dashboard') dashboard() { return this.svc.dashboard(); }
-  @Can('reports.attendance.view', 'attendance.student.view') @Get('attendance-by-class') att(@Query('from') f: string, @Query('to') t: string) { const d = todayIn(Ctx.get().tenantTz); return this.svc.attendanceByClass(f ?? `${d.slice(0, 7)}-01`, t ?? d); }
+  @Can('reports.dashboard.view') @Get('dashboard') dashboard() { return this.svc.dashboard(); }
+  @Can('reports.attendance.view', 'attendance.student.view') @Scoped() @Get('attendance-by-class')
+  att(@Query('from') f: string, @Query('to') t: string) {
+    const d = todayIn(Ctx.get().tenantTz);
+    const fs = [Authz.filter('reports.attendance.view'), Authz.filter('attendance.student.view')];
+    const sectionIds = fs.some((x) => x.kind === 'all') ? null : [...new Set(fs.flatMap((x) => (x.kind === 'some' ? x.sectionIds : [])))];
+    return this.svc.attendanceByClass(f ?? `${d.slice(0, 7)}-01`, t ?? d, sectionIds);
+  }
   @Can('reports.fees.view', 'fees.report.view') @Get('fees-by-class') fees() { return this.svc.feeByClass(); }
-  @Can('reports.export.export', 'reports.*.export') @Get('export')
+  @Can('reports.export.export') @Get('export')
   async export(@Query('dataset') ds: string, @Res() res: FastifyReply) {
     const csv = await this.svc.csv(ds);
     if (csv === null) return res.status(404).send({ error: { code: 'NOT_FOUND', message: 'Unknown dataset' } });

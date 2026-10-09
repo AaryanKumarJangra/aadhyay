@@ -207,6 +207,11 @@ export class AuthService {
     return rows;
   }
 
+  async profile(userId: string) {
+    const [u] = await this.db.admin.select({ name: user.name, phone: user.phone, email: user.email, totpEnabled: user.totpEnabled }).from(user).where(eq(user.id, userId));
+    return u ?? null;
+  }
+
   async sessions(userId: string) {
     return this.db.admin.select({ id: session.id, deviceName: session.deviceName, platform: session.platform, lastUsedAt: session.lastUsedAt, createdAt: session.createdAt, ip: session.ip })
       .from(session).where(and(eq(session.userId, userId), isNull(session.revokedAt)));
